@@ -100,7 +100,7 @@ onMounted(() => {
 
 .video-info {
   padding: 16px;
-  background: #fff;
+  background: var(--app-surface-bg);
 }
 
 .video-info h3 {
@@ -112,7 +112,7 @@ onMounted(() => {
 .video-info p {
   margin: 0;
   font-size: 14px;
-  color: #666;
+  color: var(--app-text-secondary);
   line-height: 1.5;
 }
 </style>

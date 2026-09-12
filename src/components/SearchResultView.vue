@@ -66,6 +66,10 @@ const fetchItems = async (isRefresh = false) => {
             res = await lastResult.value.next();
         }
 
+        if (!res) {
+            hasMore.value = false;
+            return;
+        }
         const rawList = res.data;
         const mapped = rawList.map(item => resolveItem(item)).filter(i => i !== null);
         if (isRefresh) {
@@ -74,7 +78,7 @@ const fetchItems = async (isRefresh = false) => {
             items.value.push(...mapped);
         }
         lastResult.value = res;
-        hasMore.value = !res.paging?.is_end;
+        hasMore.value = res.paging?.is_end !== true && Boolean(res.paging?.next);
     } catch (e) {
         console.error('Failed to fetch search results:', e);
     } finally {
@@ -122,7 +126,6 @@ const resolveItem = (item) => {
             excerpt = obj.content?.[0]?.content || '';
             likes = obj.like_count || likes;
             title = (obj.author?.name || '匿名') + '发布了想法';
-            itemType = 'pin';
             break;
 
         case 'zvideo':
@@ -162,7 +165,8 @@ onMounted(() => {
 </script>
 
 <template>
-    <f7-page name="search-result" ptr @ptr:refresh="onRefresh" infinite @infinite="onInfinite"
+    <f7-page name="search-result" ptr @ptr:refresh="onRefresh" infinite
+        :infinite-preloader="isLoading && hasMore" @infinite="onInfinite"
         :ref="(el) => pageRef = el">
         <f7-navbar :title="pageTitle" back-link="返回" />
 
@@ -205,20 +209,20 @@ onMounted(() => {
 .card-header-custom {
     margin-bottom: 8px;
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .title {
     font-size: 16px;
     font-weight: bold;
-    color: #333;
+    color: var(--f7-text-color);
     margin-bottom: 6px;
     line-height: 1.4;
 }
 
 .excerpt {
     font-size: 14px;
-    color: #666;
+    color: var(--app-text-secondary);
     margin-bottom: 8px;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -229,7 +233,7 @@ onMounted(() => {
 
 .metrics {
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .empty-state {
@@ -238,7 +242,7 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
     padding: 64px 32px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 
 .no-more {

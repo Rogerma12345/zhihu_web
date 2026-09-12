@@ -350,17 +350,17 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
     padding: 80px 32px;
-    color: #666;
+    color: var(--app-text-secondary);
 }
 
 .quality-selector {
     padding: 12px 16px;
-    background: #fff;
+    background: var(--app-surface-bg);
 }
 
 .video-info {
     padding: 16px;
-    background: #fff;
+    background: var(--app-surface-bg);
     margin-bottom: 8px;
 }
 
@@ -369,14 +369,14 @@ onMounted(() => {
     font-weight: 700;
     margin: 0 0 8px;
     line-height: 1.4;
-    color: #000;
+    color: var(--f7-text-color);
 }
 
 .video-stats {
     display: flex;
     gap: 16px;
     font-size: 13px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .author-card {
@@ -410,7 +410,7 @@ onMounted(() => {
 
 .author-headline {
     font-size: 13px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .description-card {
@@ -420,13 +420,13 @@ onMounted(() => {
 .description-text {
     font-size: 14px;
     line-height: 1.6;
-    color: #333;
+    color: var(--f7-text-color);
     white-space: pre-wrap;
 }
 
 .video-toolbar {
-    background: #fff;
-    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    background: var(--app-surface-bg);
+    border-top: 1px solid var(--app-border-color);
 }
 
 .video-toolbar .f7-link {
@@ -435,7 +435,7 @@ onMounted(() => {
     align-items: center;
     gap: 4px;
     font-size: 12px;
-    color: #666;
+    color: var(--app-text-secondary);
 }
 
 .video-toolbar .f7-link.active-action {
@@ -448,6 +448,6 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
     padding: 100px 32px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 </style>

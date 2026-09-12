@@ -8,6 +8,7 @@ import { useUser } from '@/composables/userManager';
 import routes from './f7-routes.js';
 import store from './store.js';
 import { checkTipVersion } from './utils/tip_manager.js';
+import { installPagedScroll } from './utils/paged-scroll.js';
 
 const { resetUser, refreshUser } = useUser();
 
@@ -37,6 +38,7 @@ const f7params = {
 
 onMounted(async () => {
   f7ready((f7) => {
+    installPagedScroll(f7);
     loadThemeSettings(f7);
 
     // 首次打开提示

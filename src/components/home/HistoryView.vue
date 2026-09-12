@@ -88,7 +88,7 @@ watch(activeFilter, refreshHighlight);
 
 <style scoped>
 .filter-toolbar {
-    --f7-toolbar-background-color: #fff;
+    --f7-toolbar-bg-color: var(--f7-bars-bg-color);
     z-index: 100;
 }
 
@@ -118,7 +118,7 @@ watch(activeFilter, refreshHighlight);
     font-size: 16px;
     font-weight: 700;
     line-height: 1.4;
-    color: #1a1a1a;
+    color: var(--f7-text-color);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
@@ -128,7 +128,7 @@ watch(activeFilter, refreshHighlight);
 
 .preview-text {
     font-size: 13px;
-    color: #666;
+    color: var(--app-text-secondary);
     margin-top: 4px;
     display: -webkit-box;
     -webkit-line-clamp: 1;
@@ -146,7 +146,7 @@ watch(activeFilter, refreshHighlight);
 }
 
 .time-text {
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .empty-state {
@@ -155,6 +155,6 @@ watch(activeFilter, refreshHighlight);
     align-items: center;
     justify-content: center;
     padding: 100px 32px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 </style>

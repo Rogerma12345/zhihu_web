@@ -63,27 +63,6 @@ const loadSettings = () => {
 
 loadSettings();
 
-const initDynamicHomeScrollFeatures = async () => {
-    await nextTick();
-
-    const pageEl =
-        document.querySelector('.page-current[data-name="home"]') ||
-        document.querySelector('.page[data-name="home"]');
-
-    if (!pageEl) return;
-
-    pageEl.querySelectorAll('.ptr-content').forEach((el) => {
-        if (!el.f7PullToRefresh && f7?.ptr?.create) {
-            f7.ptr.create(el);
-        }
-    });
-
-    pageEl.querySelectorAll('.infinite-scroll-content').forEach((el) => {
-        if (!el.f7InfiniteScrollHandler && f7?.infiniteScroll?.create) {
-            f7.infiniteScroll.create(el);
-        }
-    });
-};
 
 const hasNextPage = (result) => {
     return Boolean(
@@ -94,38 +73,8 @@ const hasNextPage = (result) => {
 };
 
 
-const viewportFillRounds = new Map();
-const MAX_VIEWPORT_FILL_ROUNDS = 6;
 
-const resetViewportFill = (key) => {
-    viewportFillRounds.delete(key);
-};
 
-const ensureViewportFilled = async ({ key, selector, canLoadMore, loadMore }) => {
-    await nextTick();
-
-    requestAnimationFrame(() => {
-        const el = document.querySelector(selector);
-        if (!el || !canLoadMore()) {
-            resetViewportFill(key);
-            return;
-        }
-
-        const rect = el.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return;
-
-        if (el.scrollHeight > el.clientHeight + 1) {
-            resetViewportFill(key);
-            return;
-        }
-
-        const rounds = viewportFillRounds.get(key) || 0;
-        if (rounds >= MAX_VIEWPORT_FILL_ROUNDS) return;
-
-        viewportFillRounds.set(key, rounds + 1);
-        loadMore();
-    });
-};
 
 // 推荐模块
 const lastRecommendResult = ref(null);
@@ -191,18 +140,6 @@ const mapRecommendItem = (item) => {
     };
 };
 
-const scheduleRecommendViewportFill = () => {
-    ensureViewportFilled({
-        key: 'recommend',
-        selector: '#tab-recommend .recommend-scroll-content',
-        canLoadMore: () => (
-            activeTab.value === 'recommend' &&
-            hasMoreRecommend.value &&
-            !isRecommendLoading.value
-        ),
-        loadMore: () => fetchRecommendData(false),
-    });
-};
 
 const fetchRecommendData = async (isRefresh = false) => {
     if (!isRefresh && (isRecommendLoading.value || !hasMoreRecommend.value)) return;
@@ -215,11 +152,9 @@ const fetchRecommendData = async (isRefresh = false) => {
     if (isRefresh) {
         lastRecommendResult.value = null;
         hasMoreRecommend.value = true;
-        resetViewportFill('recommend');
     }
 
     isRecommendLoading.value = true;
-    let completed = false;
 
     try {
         let res;
@@ -234,8 +169,7 @@ const fetchRecommendData = async (isRefresh = false) => {
 
         if (!res) {
             hasMoreRecommend.value = false;
-            completed = true;
-            return;
+                return;
         }
 
         const responseData = res.data;
@@ -250,7 +184,6 @@ const fetchRecommendData = async (isRefresh = false) => {
 
         lastRecommendResult.value = res;
         hasMoreRecommend.value = hasNextPage(res);
-        completed = true;
     } catch (e) {
         if (requestId === recommendRequestId) {
             console.error('Failed to fetch recommend data', e);
@@ -258,7 +191,6 @@ const fetchRecommendData = async (isRefresh = false) => {
     } finally {
         if (requestId === recommendRequestId) {
             isRecommendLoading.value = false;
-            if (completed) scheduleRecommendViewportFill();
         }
     }
 };
@@ -566,20 +498,6 @@ const mapMomentsList = (rawList) => {
     return mappedList;
 };
 
-const scheduleMomentsViewportFill = (tabId) => {
-    const state = momentsTabData[tabId];
-    ensureViewportFilled({
-        key: `moments-${tabId}`,
-        selector: `.moments-scroll-content[data-feed-tab="${tabId}"]`,
-        canLoadMore: () => (
-            activeTab.value === 'following' &&
-            momentsActiveTab.value === tabId &&
-            state.hasMore &&
-            !state.loading
-        ),
-        loadMore: () => fetchMomentsData(tabId, false),
-    });
-};
 
 const fetchMomentsData = async (tabId, isRefresh = false) => {
     const state = momentsTabData[tabId];
@@ -591,11 +509,9 @@ const fetchMomentsData = async (tabId, isRefresh = false) => {
     if (isRefresh) {
         state.lastResult = null;
         state.hasMore = true;
-        resetViewportFill(`moments-${tabId}`);
     }
 
     state.loading = true;
-    let completed = false;
 
     try {
         let res;
@@ -611,8 +527,7 @@ const fetchMomentsData = async (tabId, isRefresh = false) => {
 
         if (!res) {
             state.hasMore = false;
-            completed = true;
-            return;
+                return;
         }
 
         const responseData = res.data;
@@ -627,7 +542,6 @@ const fetchMomentsData = async (tabId, isRefresh = false) => {
 
         state.lastResult = res;
         state.hasMore = hasNextPage(res);
-        completed = true;
     } catch (e) {
         if (requestId === state.requestId) {
             console.error(`Failed to fetch moments ${tabId}`, e);
@@ -635,7 +549,6 @@ const fetchMomentsData = async (tabId, isRefresh = false) => {
     } finally {
         if (requestId === state.requestId) {
             state.loading = false;
-            if (completed) scheduleMomentsViewportFill(tabId);
         }
     }
 };
@@ -656,8 +569,6 @@ const handleMomentsTabChange = (tabId) => {
 
     if (state.list.length === 0) {
         if (!state.loading) fetchMomentsData(tabId, true);
-    } else {
-        scheduleMomentsViewportFill(tabId);
     }
 };
 
@@ -735,18 +646,6 @@ const getThoughtTitle = (excerpt) => {
     return firstLine.length > 30 ? firstLine.substring(0, 30) + '...' : firstLine;
 };
 
-const scheduleThoughtsViewportFill = () => {
-    ensureViewportFilled({
-        key: 'thoughts',
-        selector: '#tab-thoughts .thoughts-scroll-content',
-        canLoadMore: () => (
-            activeTab.value === 'thoughts' &&
-            hasMoreThoughts.value &&
-            !isThoughtsLoading.value
-        ),
-        loadMore: () => fetchThoughtsData(false),
-    });
-};
 
 const fetchThoughtsData = async (isRefresh = false) => {
     if (!isRefresh && (isThoughtsLoading.value || !hasMoreThoughts.value)) return;
@@ -756,11 +655,9 @@ const fetchThoughtsData = async (isRefresh = false) => {
     if (isRefresh) {
         lastThoughtsResult.value = null;
         hasMoreThoughts.value = true;
-        resetViewportFill('thoughts');
     }
 
     isThoughtsLoading.value = true;
-    let completed = false;
 
     try {
         let res;
@@ -776,8 +673,7 @@ const fetchThoughtsData = async (isRefresh = false) => {
 
         if (!res) {
             hasMoreThoughts.value = false;
-            completed = true;
-            return;
+                return;
         }
 
         const responseData = res.data;
@@ -815,7 +711,6 @@ const fetchThoughtsData = async (isRefresh = false) => {
 
         lastThoughtsResult.value = res;
         hasMoreThoughts.value = hasNextPage(res);
-        completed = true;
     } catch (e) {
         if (requestId === thoughtsRequestId) {
             console.error('Failed to fetch thoughts', e);
@@ -823,7 +718,6 @@ const fetchThoughtsData = async (isRefresh = false) => {
     } finally {
         if (requestId === thoughtsRequestId) {
             isThoughtsLoading.value = false;
-            if (completed) scheduleThoughtsViewportFill();
         }
     }
 };
@@ -898,28 +792,10 @@ const loadCurrentTabData = (isRefresh) => {
     }
 };
 
-const ensureActiveTabViewport = () => {
-    switch (activeTab.value) {
-        case 'recommend':
-            scheduleRecommendViewportFill();
-            break;
-        case 'thoughts':
-            scheduleThoughtsViewportFill();
-            break;
-        case 'following':
-            if (isLoggedIn.value) {
-                scheduleMomentsViewportFill(momentsActiveTab.value);
-            }
-            break;
-        default:
-            break;
-    }
-};
 
 watch(activeTab, (newTab, oldTab) => {
     if (newTab === oldTab) return;
     loadCurrentTabData();
-    nextTick(ensureActiveTabViewport);
 });
 
 watch(currentSectionIndex, refreshHighlight);
@@ -930,10 +806,8 @@ let unsubscribeUserUpdate = null;
 
 const handleHomeSettingsChanged = async () => {
     loadSettings();
-    await initDynamicHomeScrollFeatures();
     await fetchRecommendSections();
     loadCurrentTabData();
-    nextTick(ensureActiveTabViewport);
 };
 
 onMounted(async () => {
@@ -944,12 +818,7 @@ onMounted(async () => {
 
     unsubscribeUserUpdate = onUserUpdate(async () => {
         if (!isLoggedIn.value) return;
-
-        // 登录后“关注”页的 page-content 是 pageInit 之后动态加入的，补做初始化。
-        await initDynamicHomeScrollFeatures();
-        await fetchRecommendSections();
-
-        // 如果登录发生在“关注”页，登录提示消失后立即加载当前关注流。
+            await fetchRecommendSections();
         if (activeTab.value === 'following') {
             fetchMomentsData(momentsActiveTab.value, true);
         }
@@ -962,7 +831,6 @@ onMounted(async () => {
         if (!isMobile.value) {
             f7.toolbar.setHighlight('.desktop-home-toolbar');
         }
-        ensureActiveTabViewport();
     });
 });
 

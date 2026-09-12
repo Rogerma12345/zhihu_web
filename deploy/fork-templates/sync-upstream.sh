@@ -49,6 +49,7 @@ upstream_sha="$(git rev-parse FETCH_HEAD)"
 emit_output upstream_sha "$upstream_sha"
 
 if [[ "$upstream_sha" == "$state_sha" ]]; then
+  python3 deploy/verify-project-fixes.py "$repo_root"
   emit_output upstream_changed false
   exit 0
 fi

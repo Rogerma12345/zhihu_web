@@ -85,7 +85,7 @@ if "itemType = 'pin';" in search_result:
 topic = read("src/components/TopicDetail.vue")
 if "metrics = null;" in topic and "let metrics = { likes, comments };" not in topic:
     errors.append("src/components/TopicDetail.vue: metrics is undeclared")
-if "tabData[tabId].hasMore = !res.paging?.is_end" in topic:
+if "tabData[tabId].hasMore = !res.paging?.is_end" in topic or "dataState.hasMore = !res.paging?.is_end" in topic:
     errors.append("src/components/TopicDetail.vue: weak paging remains")
 
 article = read("src/components/ArticleDetail.vue")
@@ -144,9 +144,15 @@ for rel in [
 question = read("src/components/QuestionDetail.vue")
 if ':infinite-preloader="hasMore"' in question:
     errors.append("src/components/QuestionDetail.vue: preloader is detached from loading state")
+if "hasMore.value = !res.paging?.is_end" in question:
+    errors.append("src/components/QuestionDetail.vue: weak paging remains")
 
 comments = read("src/components/CommentsSheet.vue")
-if "hasMore.value = !res.paging?.is_end" in comments or "parentComment.hasMore = !result.paging?.is_end" in comments:
+if (
+    "topHasMore.value = !res?.paging?.is_end" in comments
+    or "hasMore.value = !res.paging?.is_end" in comments
+    or "parentComment.hasMore = !result.paging?.is_end" in comments
+):
     errors.append("src/components/CommentsSheet.vue: weak paging remains")
 
 home = read("src/components/home/HomeView.vue")
@@ -171,9 +177,16 @@ for token, label in [
         errors.append(f"deploy/sync-upstream.sh: {label}")
 if "fork_preserve_paths" in sync:
     errors.append("deploy/sync-upstream.sh: source preservation list still blocks upstream source updates")
+if 'if [[ "$upstream_sha" == "$state_sha" ]]; then\n  python3 deploy/verify-project-fixes.py "$repo_root"' not in sync:
+    errors.append("deploy/sync-upstream.sh: unchanged-upstream verification is missing")
+
+patcher = read("deploy/apply-fork-patches.py")
+main_match = re.search(r"def main\(\):(?P<body>.*?)\n\nif __name__", patcher, flags=re.S)
+if main_match and "patch_workflow()" in main_match.group("body"):
+    errors.append("deploy/apply-fork-patches.py: workflow patching still runs during upstream source patching")
 
 workflow = read(".github/workflows/sync-ghcr.yml")
-if "python3 deploy/verify-project-fixes.py ." not in workflow:
+if "      - name: Verify fork source\n        shell: bash" not in workflow or "python3 deploy/verify-project-fixes.py ." not in workflow:
     errors.append(".github/workflows/sync-ghcr.yml: source verification is missing")
 for token in ["src/components/FeedCard.vue", "src/components/home/HotListCard.vue", "src/style.css"]:
     if token in workflow:

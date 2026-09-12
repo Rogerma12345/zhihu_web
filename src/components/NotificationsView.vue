@@ -42,11 +42,15 @@ const fetchNotifications = async (tabId, isRefresh = false) => {
             const tab = tabs.find(t => t.id === tabId);
             const baseUrl = 'https://www.zhihu.com/api/v4/notifications/v2/recent';
             const url = `${baseUrl}?limit=20${tab.entryName ? `&entry_name=${tab.entryName}` : ''}`;
-            res = await $http.get(url);
+            res = await $http.get(url, { isWWW: true });
         } else {
             res = await state.lastResult.next();
         }
 
+        if (!res) {
+            state.hasMore = false;
+            return;
+        }
         const rawList = res.data || [];
         const mappedList = rawList.map(mapNotification);
 
@@ -56,7 +60,7 @@ const fetchNotifications = async (tabId, isRefresh = false) => {
             state.list.push(...mappedList);
         }
 
-        state.hasMore = !res.paging?.is_end;
+        state.hasMore = res.paging?.is_end !== true && Boolean(res.paging?.next);
         state.lastResult = res;
     } catch (e) {
         console.error(`Failed to fetch notifications ${tabId}`, e);
@@ -184,7 +188,7 @@ const formatTime = (timestamp) => {
 
 const markAllAsRead = async () => {
     try {
-        await $http.post('https://www.zhihu.com/api/v4/notifications/v2/default/actions/readall');
+        await $http.post('https://www.zhihu.com/api/v4/notifications/v2/default/actions/readall', '', { isWWW: true });
         f7.toast.create({ text: '已全部标记为已读' }).open();
 
         Object.values(tabData).forEach(state => {
@@ -270,6 +274,7 @@ watch(activeTab, (newTab) => {
             <f7-tab v-for="tab in tabs" :key="tab.id" :id="`tab-${tab.id}`" :tab-active="activeTab === tab.id"
                 @tab:show="activeTab = tab.id">
                 <f7-page-content ptr @ptr:refresh="(done) => onRefresh(tab.id, done)" infinite
+                    :infinite-preloader="tabData[tab.id].loading && tabData[tab.id].hasMore"
                     @infinite="onInfinite(tab.id)">
                     <div class="notifications-list">
                         <f7-card v-for="notification in tabData[tab.id].list" :key="notification.id"
@@ -320,7 +325,7 @@ watch(activeTab, (newTab) => {
 
 <style scoped>
 .notifications-tabbar {
-    --f7-toolbar-background-color: #fff;
+    --f7-toolbar-bg-color: var(--f7-bars-bg-color);
     z-index: 100;
 }
 
@@ -412,7 +417,7 @@ watch(activeTab, (newTab) => {
 
 .target-content {
     font-size: 13px;
-    color: #666;
+    color: var(--app-text-secondary);
     display: -webkit-box;
     -webkit-line-clamp: 3;
     line-clamp: 3;
@@ -422,7 +427,7 @@ watch(activeTab, (newTab) => {
 
 .notification-time {
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
     margin-top: 4px;
 }
 
@@ -432,6 +437,6 @@ watch(activeTab, (newTab) => {
     align-items: center;
     justify-content: center;
     padding: 64px 32px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 </style>

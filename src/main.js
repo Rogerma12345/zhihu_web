@@ -35,7 +35,14 @@ window.$openLink = $openLink
 app.config.globalProperties.$openLink = $openLink
 
 const $handleCardClick = (f7router, item) => {
-    const { type, id } = item;
+    const { id } = item;
+    const type = {
+        user: 'people',
+        member: 'people',
+        pin_general: 'pin',
+        moments_pin: 'pin',
+        video: 'zvideo'
+    }[item.type] || item.type;
 
     switch (type) {
         case "question":

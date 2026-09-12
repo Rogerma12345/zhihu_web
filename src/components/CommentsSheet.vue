@@ -111,7 +111,7 @@ const loadTopComments = async (loadMore = false) => {
             totalComments.value = res?.paging?.totals;
         }
 
-        topHasMore.value = !res?.paging?.is_end;
+        topHasMore.value = res?.paging?.is_end !== true && Boolean(res?.paging?.next);
         topResult.value = res;
 
     } catch (err) {
@@ -217,7 +217,7 @@ const loadChildComments = async (parentComment, loadMore = false) => {
             parentComment.childComments = formatted;
         }
 
-        parentComment.hasMore = !result.paging?.is_end;
+        parentComment.hasMore = result.paging?.is_end !== true && Boolean(result.paging?.next);
         parentComment.childResult = result;
 
     } catch (err) {
@@ -525,11 +525,11 @@ const convertLinksToOpenlink = function (html) {
             </div>
 
             <!-- Footer Input -->
-            <div class="footer padding display-flex align-items-center bg-color-white"
-                style="border-top: 1px solid rgba(0,0,0,0.1)">
+            <div class="footer padding display-flex align-items-center app-surface-bg"
+                style="border-top: 1px solid var(--app-border-color)">
                 <input type="text" v-model="replyContent" :placeholder="replyTo ? `回复 ${replyTo}...` : '说点什么...'"
                     @keyup.enter="sendComment"
-                    style="flex:1; padding: 10px; border-radius: 20px; border: 1px solid #ccc; margin-right: 8px;">
+                    style="flex:1; padding: 10px; border-radius: 20px; border: 1px solid var(--app-border-color); margin-right: 8px;">
                 <f7-link icon-only class="color-primary" @click="sendComment">
                     <f7-icon ios="f7:paperplane_fill" md="material:send" />
                 </f7-link>
@@ -552,7 +552,7 @@ const convertLinksToOpenlink = function (html) {
     justify-content: space-between;
     align-items: center;
     padding: 16px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--app-border-color);
 }
 
 .header-left {
@@ -584,7 +584,7 @@ const convertLinksToOpenlink = function (html) {
 }
 
 .sort-selector .f7-link {
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .sort-selector .f7-link.active-sort {

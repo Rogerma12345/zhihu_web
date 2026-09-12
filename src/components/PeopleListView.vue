@@ -83,6 +83,10 @@ const fetchPeople = async (isRefresh = false) => {
             res = await lastResult.value.next();
         }
 
+        if (!res) {
+            hasMore.value = false;
+            return;
+        }
         const rawList = res.data || [];
         const mapped = rawList.map(item => resolveData(item));
         if (isRefresh) {
@@ -91,7 +95,7 @@ const fetchPeople = async (isRefresh = false) => {
             people.value.push(...mapped);
         }
         lastResult.value = res;
-        hasMore.value = !res.paging?.is_end;
+        hasMore.value = res.paging?.is_end !== true && Boolean(res.paging?.next);
     } catch (e) {
         console.error('Failed to fetch people:', e);
     } finally {
@@ -203,7 +207,8 @@ onMounted(() => {
 </script>
 
 <template>
-    <f7-page name="people-list" ptr @ptr:refresh="onRefresh" infinite @infinite="onInfinite"
+    <f7-page name="people-list" ptr @ptr:refresh="onRefresh" infinite
+        :infinite-preloader="isLoading && hasMore" @infinite="onInfinite"
         :ref="(el) => pageRef = el">
         <f7-navbar :title="pageTitle" back-link="返回">
             <f7-nav-right v-if="currentType.startsWith('block')">
@@ -252,7 +257,7 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
     padding: 64px 32px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 
 .no-more {

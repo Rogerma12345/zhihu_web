@@ -62,14 +62,14 @@ onMounted(() => {
     justify-content: center;
     padding: 80px 32px;
     text-align: center;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 
 .message-guide h3 {
     margin: 16px 0 8px;
     font-size: 20px;
     font-weight: 600;
-    color: #000;
+    color: var(--f7-text-color);
 }
 
 .message-guide p {

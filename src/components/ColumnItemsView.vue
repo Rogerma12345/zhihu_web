@@ -48,6 +48,10 @@ const fetchItems = async (isRefresh = false) => {
             res = await lastResult.value.next();
         }
 
+        if (!res) {
+            hasMore.value = false;
+            return;
+        }
         const rawList = res.data || [];
 
         const mapped = rawList.map(item => resolveItem(item));
@@ -57,7 +61,7 @@ const fetchItems = async (isRefresh = false) => {
             items.value.push(...mapped);
         }
         lastResult.value = res;
-        hasMore.value = !res.paging?.is_end;
+        hasMore.value = res.paging?.is_end !== true && Boolean(res.paging?.next);
     } catch (e) {
         console.error('Failed to fetch column items:', e);
     } finally {
@@ -126,7 +130,8 @@ onMounted(() => {
 </script>
 
 <template>
-    <f7-page name="column-items" ptr @ptr:refresh="onRefresh" infinite @infinite="onInfinite"
+    <f7-page name="column-items" ptr @ptr:refresh="onRefresh" infinite
+        :infinite-preloader="isLoading && hasMore" @infinite="onInfinite"
         :ref="(el) => pageRef = el">
         <f7-navbar title="专栏详情" back-link="返回" />
 
@@ -152,7 +157,7 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
     padding: 64px 32px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 
 .no-more {

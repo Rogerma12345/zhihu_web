@@ -42,11 +42,12 @@ class ZhihuRequest {
         console.log('UpdateLoginData:', loginData);
 
         loginData = loginData.guest || loginData;
-        this.accessToken = "Bearer " + loginData.access_token;
+        this.accessToken = loginData.access_token ? `Bearer ${loginData.access_token}` : "";
+        const cookieData = { ...(loginData.cookie || {}) };
         if (loginData.udid) {
-            this.cookie["d_c0"] = loginData.udid;
+            cookieData.d_c0 = loginData.udid;
         }
-        this.cookie = Object.entries(loginData.cookie || {})
+        this.cookie = Object.entries(cookieData)
             .filter(([_, v]) => v)
             .map(([k, v]) => `${k}=${v}`)
             .join('; ');

@@ -75,6 +75,7 @@ const handleGalleryImageClick = (index) => {
 let type = props.f7route?.params?.type;
 switch (type) {
     case "pin_general":
+    case "moments_pin":
         type = "pin";
         break;
     case "p":
@@ -117,15 +118,15 @@ const fetchData = async () => {
             title: data.header?.text || '无标题',
             authorName: data.author?.fullname || '匿名用户',
             authorId: data.author?.id,
-            avatarUrl: data.author.avatar?.avatar_image?.day || '',
+            avatarUrl: data.author?.avatar?.avatar_image?.day || '',
             imageUrl: data.image_url || data.title_image || '',
             structured_content: segs,
             content: data.content || '',
             metrics: {
-                votes: data.reaction.statistics.up_vote_count || 0,
-                likes: data.reaction.statistics.like_count || 0,
-                favlists: data.reaction.statistics.favorites || 0,
-                comments: data.reaction.statistics.comment_count || 0
+                votes: data.reaction?.statistics?.up_vote_count || 0,
+                likes: data.reaction?.statistics?.like_count || 0,
+                favlists: data.reaction?.statistics?.favorites || 0,
+                comments: data.reaction?.statistics?.comment_count || 0
             },
             isUpvoted: data.reaction?.relation?.vote === "UP" ? true : false,
             isLiked: data.reaction?.relation?.liked || false,
@@ -143,7 +144,7 @@ const fetchData = async () => {
         });
 
         if (type === 'answer') {
-            mappedItem.questionID = data.question.id;
+            mappedItem.questionID = data.question?.id;
         }
 
         if (data.image_list?.images) {

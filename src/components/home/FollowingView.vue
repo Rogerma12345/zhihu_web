@@ -13,7 +13,7 @@ const userId = computed(() => currentUser.value?.id || '');
 const activeTab = ref(props.tab || 'questions');
 
 const tabs = computed(() => [
-    { id: 'questions', label: '问题', url: `https://api.zhihu.com/people/${userId.value}/following_questions` },
+    { id: 'questions', label: '问题', url: `https://api.zhihu.com/people/${userId.value}/following-questions` },
     { id: 'collections', label: '收藏夹', url: `https://api.zhihu.com/people/${userId.value}/following_collections` },
     { id: 'topics', label: '话题', url: `https://api.zhihu.com/people/${userId.value}/following_topics` },
     { id: 'columns', label: '专栏', url: `https://api.zhihu.com/people/${userId.value}/following_columns` },
@@ -35,6 +35,7 @@ tabs.value.forEach(tab => {
 });
 
 const fetchTabData = async (tabId, isRefresh = false) => {
+    if (!userId.value) return;
     const state = tabData[tabId];
     if (state.loading) return;
     if (!isRefresh && !state.hasMore) return;
@@ -49,6 +50,10 @@ const fetchTabData = async (tabId, isRefresh = false) => {
             res = await state.lastResult.next();
         }
 
+        if (!res) {
+            state.hasMore = false;
+            return;
+        }
         const rawList = res.data || [];
         const mappedItems = rawList.map(item => mapItem(tabId, item));
 
@@ -59,7 +64,7 @@ const fetchTabData = async (tabId, isRefresh = false) => {
         }
 
         state.lastResult = res;
-        state.hasMore = !res.paging?.is_end;
+        state.hasMore = res.paging?.is_end !== true && Boolean(res.paging?.next);
     } catch (e) {
         console.error(`Failed to fetch ${tabId}`, e);
     } finally {
@@ -106,8 +111,8 @@ const mapItem = (tabId, item) => {
                 title: item.name,
                 subtitle: item.headline || '无签名',
                 image: item.avatar_url,
-                isFollowing: item.isFollowing,
-                type: 'user'
+                isFollowing: item.is_following ?? item.isFollowing ?? true,
+                type: 'people'
             };
         case 'specials':
         case 'roundtables':
@@ -148,7 +153,7 @@ const handleFollowClick = async (item) => {
 };
 
 onMounted(() => {
-    fetchTabData(activeTab.value, true);
+    if (userId.value) fetchTabData(activeTab.value, true);
 });
 
 watch(activeTab, (newTab) => {
@@ -189,6 +194,7 @@ watch(userId, (newId) => {
             <f7-tab v-for="tab in tabs" :key="tab.id" :id="`tab-${tab.id}`" :tab-active="activeTab === tab.id"
                 class="following-tab-content" @tab:show="activeTab = tab.id">
                 <f7-page-content ptr @ptr:refresh="(done) => onRefresh(tab.id, done)" infinite
+                    :infinite-preloader="tabData[tab.id].loading && tabData[tab.id].hasMore"
                     @infinite="onInfinite(tab.id)" class="tab-scroll-content">
                     <div class="card-list-container">
                         <f7-card v-for="item in tabData[tab.id].list" :key="item.id" class="following-item-card"
@@ -232,7 +238,7 @@ watch(userId, (newId) => {
 
 <style scoped>
 .following-tabbar {
-    --f7-toolbar-background-color: #fff;
+    --f7-toolbar-bg-color: var(--f7-bars-bg-color);
     z-index: 100;
 }
 
@@ -265,7 +271,7 @@ watch(userId, (newId) => {
     height: 44px;
     border-radius: 50%;
     object-fit: cover;
-    border: 1px solid rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--app-border-color);
 }
 
 .content-side {
@@ -299,7 +305,7 @@ watch(userId, (newId) => {
 .card-footer-info {
     margin-top: 8px;
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
     display: flex;
     justify-content: space-between;
 }
@@ -321,6 +327,6 @@ watch(userId, (newId) => {
     align-items: center;
     justify-content: center;
     padding: 64px 32px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 </style>

@@ -64,7 +64,7 @@ const handleUninterest = (userId) => {
     font-size: 16px;
     font-weight: 700;
     margin: 0;
-    color: #333;
+    color: var(--f7-text-color);
 }
 
 .recommend-user-card-list-content {

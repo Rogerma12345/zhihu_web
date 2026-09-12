@@ -148,7 +148,7 @@ const getRemainingCount = () => {
 
 .moment-action-time {
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -184,7 +184,7 @@ const getRemainingCount = () => {
     font-weight: 700;
     margin: 0;
     line-height: 1.4;
-    color: #333;
+    color: var(--f7-text-color);
 }
 
 .moment-item-excerpt {
@@ -193,7 +193,7 @@ const getRemainingCount = () => {
 
 .moment-excerpt {
     font-size: 14px;
-    color: #666;
+    color: var(--app-text-secondary);
     line-height: 1.5;
     margin: 0;
 }
@@ -210,7 +210,7 @@ const getRemainingCount = () => {
 
 .metric {
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
     display: flex;
     align-items: center;
     gap: 4px;

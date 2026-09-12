@@ -157,6 +157,8 @@ const fetchUserInfo = async () => {
             avatarUrl: data.avatar_url,
             coverUrl: data.cover_url,
             isBlocking: data.is_blocking,
+            isFollowing: data.is_following ?? false,
+            gender: data.gender ?? -1,
             headline: data.headline,
             metrics: {
                 follower: data.follower_count || 0,
@@ -207,8 +209,12 @@ const fetchContent = async (tabId, isRefresh = false) => {
             }
         }
 
+        if (!res) {
+            dataState.hasMore = false;
+            return;
+        }
         let processedItems = [];
-        const avatarUrl = userInfo.value.avatarUrl;
+        const avatarUrl = userInfo.value?.avatarUrl || '';
         const moreTabs = res.more_tabs || [];
         if (moreTabs.length > 0) {
             processedItems = moreTabs.map(tabItem => {
@@ -233,7 +239,7 @@ const fetchContent = async (tabId, isRefresh = false) => {
 
             processedItems = rawList.map(item => {
                 const targetItem = item.target || item;
-                const type = targetItem.type === 'moments_pin' ? 'pin' : targetItem.type;
+                const type = { moments_pin: 'pin', pin_general: 'pin', video: 'zvideo' }[targetItem.type] || targetItem.type;
 
                 const likes = targetItem.voteup_count || targetItem.like_count || 0;
                 const comments = targetItem.comment_count || targetItem.items_count || 0;
@@ -321,7 +327,6 @@ const fetchContent = async (tabId, isRefresh = false) => {
                     avatarUrl,
                     type,
                     id,
-                    type,
                     metrics: {
                         likes,
                         comments,
@@ -337,7 +342,7 @@ const fetchContent = async (tabId, isRefresh = false) => {
         }
 
         dataState.lastResult = res;
-        dataState.hasMore = !res.paging?.is_end;
+        dataState.hasMore = res.paging?.is_end !== true && Boolean(res.paging?.next);
 
 
     } catch (e) {
@@ -351,23 +356,20 @@ const fetchContent = async (tabId, isRefresh = false) => {
 const headerHeight = ref(0);
 const headerRef = ref(null);
 
-onMounted(() => {
+onMounted(async () => {
     if (!hasHistory) {
-        fetchUserInfo();
-        fetchTabs().then(() => {
-            if (activeTab.value) fetchContent(activeTab.value);
-        });
+        await Promise.all([fetchUserInfo(), fetchTabs()]);
+        if (activeTab.value) await fetchContent(activeTab.value);
     }
 
-    nextTick(() => {
-        if (headerRef.value) {
-            headerHeight.value = headerRef.value.offsetHeight;
-        }
-    });
+    await nextTick();
+    if (headerRef.value) {
+        headerHeight.value = headerRef.value.offsetHeight;
+    }
 });
 
 watch(activeTab, (newId) => {
-    if (newId) fetchContent(newId);
+    if (newId && userInfo.value) fetchContent(newId);
 });
 
 watch(answerSort, () => {
@@ -551,6 +553,7 @@ const showSearchPrompt = () => {
                     :auto-page-content="false" :fixed="false" :scrollable="true" :initialActiveId="activeTab">
                     <template v-for="tab in tabs" :key="tab.id" #[tab.id]>
                         <f7-page-content ptr @ptr:refresh="(done) => onRefresh(tab.id, done)" infinite
+                            :infinite-preloader="tabData[tab.id]?.loading && tabData[tab.id]?.hasMore"
                             :ref="(el) => setScrollRef(el, tab.id)" @infinite="() => onLoadMore(tab.id)"
                             class="tab-scroll-content">
                             <div class="content-list">
@@ -693,7 +696,7 @@ const showSearchPrompt = () => {
     width: 80px;
     height: 80px;
     border-radius: 50%;
-    border: 4px solid #fff;
+    border: 4px solid var(--f7-page-bg-color);
     object-fit: cover;
 }
 
@@ -718,7 +721,7 @@ const showSearchPrompt = () => {
 .headline {
     margin-top: 8px;
     font-size: 0.95rem;
-    color: #444;
+    color: var(--app-text-secondary);
 }
 
 .stats-row {
@@ -739,7 +742,7 @@ const showSearchPrompt = () => {
 
 .stat-label {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--app-text-secondary);
     margin-left: 4px;
 }
 
@@ -764,7 +767,7 @@ const showSearchPrompt = () => {
 }
 
 .tab-sort-bar {
-    background: #fdfdfd;
+    background: var(--app-surface-bg);
     height: 36px;
     border-bottom: 1px solid rgba(0, 0, 0, 0.03);
 }
@@ -777,7 +780,7 @@ const showSearchPrompt = () => {
 }
 
 .sort-selector .f7-link {
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .sort-selector .f7-link.active-sort {
@@ -824,11 +827,11 @@ const showSearchPrompt = () => {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background-color: #f0f0f0;
+    background-color: var(--app-placeholder-bg);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #999;
+    color: var(--app-text-muted);
     font-size: 12px;
     font-weight: bold;
     flex-shrink: 0;
@@ -920,6 +923,6 @@ const showSearchPrompt = () => {
 .empty-state {
     padding: 100px 32px;
     text-align: center;
-    color: #999;
+    color: var(--app-text-muted);
 }
 </style>

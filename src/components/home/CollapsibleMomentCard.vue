@@ -54,7 +54,7 @@ defineEmits(['click'])
 /* 容器样式 */
 .collapsible-moment-card-container {
     margin-bottom: 16px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--app-border-color);
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -66,25 +66,25 @@ defineEmits(['click'])
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #e0e0e0;
+    border-bottom: 1px solid var(--app-border-color);
 }
 
 .collapsible-moment-group-title {
     margin: 0;
     font-size: 16px;
     font-weight: 700;
-    color: #333;
+    color: var(--f7-text-color);
 }
 
 .collapsible-moment-group-count {
     font-size: 14px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 /* 折叠按钮样式 */
 .collapsible-moment-toggle {
     border: none;
-    border-top: 1px solid #e0e0e0;
+    border-top: 1px solid var(--app-border-color);
     margin: 0;
 }
 
@@ -105,6 +105,6 @@ defineEmits(['click'])
     border-radius: 0;
     border-left: none;
     border-right: none;
-    border-top: 1px solid #e0e0e0;
+    border-top: 1px solid var(--app-border-color);
 }
 </style>

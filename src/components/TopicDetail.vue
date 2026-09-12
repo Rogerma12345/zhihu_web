@@ -127,7 +127,7 @@ const formatContentItem = (item) => {
     const authorName = targetItem.author?.name || '';
     const rawExcerpt = targetItem.excerpt || targetItem.excerpt_title || '';
     const originalType = targetItem.type;
-    const type = originalType === 'moments_pin' ? 'pin' : originalType;
+    const type = { moments_pin: 'pin', pin_general: 'pin', video: 'zvideo' }[originalType] || originalType;
     const id = targetItem.id;
 
     const likes = targetItem.voteup_count || targetItem.like_count || 0;
@@ -136,6 +136,7 @@ const formatContentItem = (item) => {
     let excerpt = authorName ? `${authorName} : ${rawExcerpt}` : rawExcerpt;
     let title = targetItem.title || '';
     let footer = '';
+    let metrics = { likes, comments };
 
     switch (type) {
         case 'answer':
@@ -174,10 +175,7 @@ const formatContentItem = (item) => {
         excerpt,
         footer,
         noAuthorPrefix: true,
-        metrics: {
-            likes,
-            comments
-        },
+        metrics,
     };
 };
 
@@ -211,7 +209,7 @@ const fetchContent = async (tabId, isRefresh = false) => {
             }
 
             dataState.lastResult = res;
-            dataState.hasMore = !res.paging?.is_end;
+            dataState.hasMore = res.paging?.is_end !== true && Boolean(res.paging?.next);
         }
     } catch (e) {
         console.error(`Failed to fetch content for ${tabId}`, e);
@@ -367,7 +365,7 @@ const toggleFollow = async () => {
                         </div>
 
                         <f7-page-content v-else ptr @ptr:refresh="(done) => onRefresh(tab.id, done)" infinite
-                            :infinite-preloader="false" @infinite="onLoadMore(tab.id)" class="tab-scroll-content"
+                            :infinite-preloader="tabData[tab.id].loading && tabData[tab.id].hasMore" @infinite="onLoadMore(tab.id)" class="tab-scroll-content"
                             :ref="(el) => setScrollRef(el, tab.id)">
                             <div class="content-list">
                                 <div v-if="!tabData[tab.id].loading && tabData[tab.id].list.length === 0"
@@ -461,9 +459,9 @@ const toggleFollow = async () => {
     width: 80px;
     height: 80px;
     border-radius: 8px;
-    border: 4px solid #fff;
+    border: 4px solid var(--f7-page-bg-color);
     object-fit: cover;
-    background: #f0f0f0;
+    background: var(--app-placeholder-bg);
 }
 
 .follow-btn {
@@ -486,7 +484,7 @@ const toggleFollow = async () => {
 .headline {
     margin-top: 8px;
     font-size: 0.95rem;
-    color: #444;
+    color: var(--app-text-secondary);
     line-height: 1.5;
 }
 
@@ -508,7 +506,7 @@ const toggleFollow = async () => {
 
 .stat-label {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--app-text-secondary);
 }
 
 .content-list {
@@ -523,12 +521,12 @@ const toggleFollow = async () => {
 .empty-state {
     padding: 100px 32px;
     text-align: center;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .detail-text {
     white-space: pre-wrap;
     line-height: 1.6;
-    color: #444;
+    color: var(--app-text-secondary);
 }
 </style>

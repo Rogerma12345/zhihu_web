@@ -271,7 +271,7 @@ const getCardInfo = (segment) => {
     height: 64px;
     border-radius: 8px;
     object-fit: cover;
-    background-color: #eee;
+    background-color: var(--app-placeholder-bg);
 }
 
 .video-container {

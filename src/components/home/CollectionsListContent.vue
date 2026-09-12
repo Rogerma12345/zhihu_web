@@ -39,7 +39,7 @@ defineProps(['onRefresh'])
     width: 64px;
     height: 64px;
     border-radius: 8px;
-    background-color: #eee;
+    background-color: var(--app-placeholder-bg);
     flex-shrink: 0;
     overflow: hidden;
 }

@@ -12,7 +12,7 @@ const goHome = () => {
     <f7-navbar title="页面不存在" back-link="返回"></f7-navbar>
     <f7-block strong inset class="text-align-center">
       <div style="font-size: 48px; line-height: 1; margin-bottom: 16px;">404</div>
-      <div style="color: #666; margin-bottom: 24px;">未找到您请求的页面</div>
+      <div style="color: var(--app-text-secondary); margin-bottom: 24px;">未找到您请求的页面</div>
       <f7-button fill @click="goHome">返回首页</f7-button>
     </f7-block>
   </f7-page>

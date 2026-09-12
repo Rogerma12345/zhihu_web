@@ -67,10 +67,9 @@ def patch_app():
 def patch_main():
     rel = "src/main.js"
     text = read(rel)
-    old = """const $handleCardClick = (f7router, item) => {
-    const { type, id } = item;
-    switch (type) {"""
-    new = """const $handleCardClick = (f7router, item) => {
+    if "pin_general: 'pin'" not in text:
+        pattern = r"const \$handleCardClick = \(f7router, item\) => \{\n\s*const \{ type, id \} = item;\n\s*switch \(type\) \{"
+        replacement = """const $handleCardClick = (f7router, item) => {
     const { id } = item;
     const type = {
         user: 'people',
@@ -79,9 +78,11 @@ def patch_main():
         moments_pin: 'pin',
         video: 'zvideo'
     }[item.type] || item.type;
+
     switch (type) {"""
-    if "pin_general: 'pin'" not in text:
-        text = replace_once(text, old, new, rel + " type aliases")
+        text, count = re.subn(pattern, replacement, text, count=1)
+        if count != 1:
+            raise RuntimeError(rel + " type aliases")
     write(rel, text)
 
 
@@ -198,6 +199,7 @@ def patch_topic():
             comments
         },""", "        metrics,")
     text = text.replace("const type = originalType === 'moments_pin' ? 'pin' : originalType;", "const type = { moments_pin: 'pin', pin_general: 'pin', video: 'zvideo' }[originalType] || originalType;")
+    text = text.replace("dataState.hasMore = !res.paging?.is_end;", "dataState.hasMore = res.paging?.is_end !== true && Boolean(res.paging?.next);")
     text = text.replace("tabData[tabId].hasMore = !res.paging?.is_end;", "tabData[tabId].hasMore = res.paging?.is_end !== true && Boolean(res.paging?.next);")
     text = text.replace(':infinite-preloader="false"', ':infinite-preloader="tabData[tab.id].loading && tabData[tab.id].hasMore"')
     write(rel, text)
@@ -219,7 +221,7 @@ def patch_article_detail():
 def patch_collection_sheet():
     rel = "src/components/CollectionSheet.vue"
     text = read(rel)
-    pattern = r"const fetchCollections = async \(\) => \{\n.*?\n\};\nconst handleConfirm"
+    pattern = r"const fetchCollections = async \(\) => \{\n.*?\n\};\n+const handleConfirm"
     replacement = """const fetchCollections = async () => {
     if (isLoading.value) return;
     isLoading.value = true;
@@ -261,6 +263,7 @@ def patch_question():
     rel = "src/components/QuestionDetail.vue"
     text = read(rel)
     text = text.replace(':infinite-preloader="hasMore"', ':infinite-preloader="isLoadingMore && hasMore"')
+    text = text.replace("hasMore.value = !res.paging?.is_end;", "hasMore.value = res.paging?.is_end !== true && Boolean(res.paging?.next);")
     write(rel, text)
 
 
@@ -429,6 +432,7 @@ def patch_column_items():
 def patch_comments_sheet():
     rel = "src/components/CommentsSheet.vue"
     text = read(rel)
+    text = text.replace("topHasMore.value = !res?.paging?.is_end;", "topHasMore.value = res?.paging?.is_end !== true && Boolean(res?.paging?.next);")
     text = text.replace("hasMore.value = !res.paging?.is_end;", "hasMore.value = res.paging?.is_end !== true && Boolean(res.paging?.next);")
     text = text.replace("parentComment.hasMore = !result.paging?.is_end;", "parentComment.hasMore = result.paging?.is_end !== true && Boolean(result.paging?.next);")
     write(rel, text)
@@ -437,23 +441,36 @@ def patch_comments_sheet():
 def patch_home_cleanup():
     rel = "src/components/home/HomeView.vue"
     text = read(rel)
-    text = re.sub(r"\nconst initDynamicHomeScrollFeatures = async \(\) => \{.*?\n\};\n(?=const hasNextPage)", "\n", text, count=1, flags=re.S)
-    text = re.sub(r"\nconst viewportFillRounds = new Map\(\);.*?\n\};\n(?=const mapRecommendItem)", "\n", text, count=1, flags=re.S)
-    text = re.sub(r"\nconst scheduleRecommendViewportFill = \(\) => \{.*?\n\};\n", "\n", text, count=1, flags=re.S)
-    text = re.sub(r"\nconst scheduleMomentsViewportFill = \(tabId\) => \{.*?\n\};\n", "\n", text, count=1, flags=re.S)
-    text = re.sub(r"\nconst scheduleThoughtsViewportFill = \(\) => \{.*?\n\};\n", "\n", text, count=1, flags=re.S)
-    text = re.sub(r"\nconst ensureActiveTabViewport = \(\) => \{.*?\n\};\n", "\n", text, count=1, flags=re.S)
-    text = re.sub(r"\n\s*resetViewportFill\([^;\n]+\);", "", text)
-    text = re.sub(r"\n\s*if \(completed\) schedule(?:Recommend|Moments|Thoughts)ViewportFill\([^;\n]*\);", "", text)
-    text = text.replace("    let completed = false;\n", "")
-    text = text.replace("        completed = true;\n", "")
-    text = re.sub(r"\n\s*schedule(?:Recommend|Moments|Thoughts)ViewportFill\([^;\n]*\);", "", text)
-    text = text.replace("    nextTick(ensureActiveTabViewport);\n", "")
-    text = text.replace("    await initDynamicHomeScrollFeatures();\n", "")
-    text = text.replace("        await initDynamicHomeScrollFeatures();\n", "")
-    text = text.replace("        ensureActiveTabViewport();\n", "")
+    helper_names = [
+        "initDynamicHomeScrollFeatures",
+        "resetViewportFill",
+        "ensureViewportFilled",
+        "scheduleRecommendViewportFill",
+        "scheduleMomentsViewportFill",
+        "scheduleThoughtsViewportFill",
+        "ensureActiveTabViewport",
+    ]
+    for name in helper_names:
+        text = re.sub(
+            rf"\nconst {name} = .*?\n\}};\n",
+            "\n",
+            text,
+            count=1,
+            flags=re.S,
+        )
+    text = re.sub(r"^const viewportFillRounds = new Map\(\);\n", "", text, count=1, flags=re.M)
+    text = re.sub(r"^const MAX_VIEWPORT_FILL_ROUNDS = \d+;\n", "", text, count=1, flags=re.M)
+    text = re.sub(r"^\s*resetViewportFill\([^;\n]+\);\n", "", text, flags=re.M)
+    text = re.sub(r"^\s*if \(completed\) schedule(?:Recommend|Moments|Thoughts)ViewportFill\([^;\n]*\);\n", "", text, flags=re.M)
+    text = re.sub(r"^\s*schedule(?:Recommend|Moments|Thoughts)ViewportFill\([^;\n]*\);\n", "", text, flags=re.M)
+    text = re.sub(r"^\s*let completed = false;\n", "", text, flags=re.M)
+    text = re.sub(r"^\s*completed = true;\n", "", text, flags=re.M)
+    text = re.sub(r"^\s*nextTick\(ensureActiveTabViewport\);\n", "", text, flags=re.M)
+    text = re.sub(r"^\s*await initDynamicHomeScrollFeatures\(\);\n", "", text, flags=re.M)
+    text = re.sub(r"^\s*ensureActiveTabViewport\(\);\n", "", text, flags=re.M)
     text = re.sub(r"\n\s*// 登录后“关注”页[^\n]*", "", text)
     text = re.sub(r"\n\s*// 如果登录发生[^\n]*", "", text)
+    text = re.sub(r"(if \(state\.list\.length === 0\) \{\n\s*if \(!state\.loading\) fetchMomentsData\(tabId, true\);\n\s*\}) else \{\n\s*\}", r"\1", text, count=1)
     write(rel, text)
 
 
@@ -507,7 +524,6 @@ def patch_workflow():
     rel = ".github/workflows/sync-ghcr.yml"
     text = read(rel)
     verify_step = """      - name: Verify fork source
-        if: github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
@@ -549,7 +565,7 @@ def patch_workflow():
           fi
 
 """
-    text = re.sub(r"      - name: Check synchronized workspace\n.*?(?=      - name: Decide whether to build)", check_step, text, count=1, flags=re.S)
+    text = re.sub(r"      - name: Check synchronized workspace\n.*?(?=      - name: Decide whether to build)", lambda _m: check_step, text, count=1, flags=re.S)
     record_step = """      - name: Record successful upstream publication
         if: success() && steps.prepare.outputs.upstream_changed == 'true'
         shell: bash
@@ -585,7 +601,7 @@ def patch_workflow():
           git commit -m "chore: sync upstream ${upstream_sha:0:12}"
           git push origin HEAD:main
 """
-    text = re.sub(r"      - name: Record successful upstream publication\n.*\Z", record_step, text, count=1, flags=re.S)
+    text = re.sub(r"      - name: Record successful upstream publication\n.*\Z", lambda _m: record_step, text, count=1, flags=re.S)
     write(rel, text)
 
 
@@ -614,7 +630,6 @@ def main():
     patch_comments_sheet()
     patch_home_cleanup()
     patch_colors()
-    patch_workflow()
 
 
 if __name__ == "__main__":

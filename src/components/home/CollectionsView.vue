@@ -89,6 +89,10 @@ const fetchTabData = async (tabId, isRefresh = false) => {
             res = await state.lastResult.next();
         }
 
+        if (!res) {
+            state.hasMore = false;
+            return;
+        }
         const rawList = res.data || [];
         const mappedItems = rawList.map(item => mapItem(tabId, item));
 
@@ -99,7 +103,7 @@ const fetchTabData = async (tabId, isRefresh = false) => {
         }
 
         state.lastResult = res;
-        state.hasMore = !res.paging?.is_end;
+        state.hasMore = res.paging?.is_end !== true && Boolean(res.paging?.next);
     } catch (e) {
         console.error(`Failed to fetch ${tabId} collections`, e);
     } finally {
@@ -251,6 +255,7 @@ const showSearchPrompt = () => {
             <f7-tab v-for="tab in tabs" :key="tab.id" :id="`col-tab-${tab.id}`" :tab-active="activeTab === tab.id"
                 class="collections-tab-content" @tab:show="activeTab = tab.id">
                 <f7-page-content ptr @ptr:refresh="(done) => onRefresh(tab.id, done)" infinite
+                    :infinite-preloader="tabData[tab.id].loading && tabData[tab.id].hasMore"
                     @infinite="onInfinite(tab.id)" class="tab-scroll-content" :ref="(el) => setScrollRef(el, tab.id)">
 
                     <div class="card-list-container">
@@ -331,7 +336,7 @@ const showSearchPrompt = () => {
 
 <style scoped>
 .collections-tabbar {
-    --f7-toolbar-background-color: #fff;
+    --f7-toolbar-bg-color: var(--f7-bars-bg-color);
     z-index: 100;
 }
 
@@ -347,7 +352,7 @@ const showSearchPrompt = () => {
     justify-content: space-between;
     align-items: center;
     padding: 16px 24px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--app-border-color);
 }
 
 .sheet-title {
@@ -357,7 +362,7 @@ const showSearchPrompt = () => {
 
 .header-text {
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
     margin-bottom: 2px;
 }
 
@@ -417,7 +422,7 @@ const showSearchPrompt = () => {
 }
 
 .lock-icon {
-    color: #8e8e93;
+    color: var(--app-text-muted);
     flex-shrink: 0;
 }
 
@@ -429,13 +434,13 @@ const showSearchPrompt = () => {
 
 .collection-subtitle {
     font-size: 13px;
-    color: #666;
+    color: var(--app-text-secondary);
     margin-bottom: 8px;
 }
 
 .collection-footer {
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .creator-media {
@@ -447,7 +452,7 @@ const showSearchPrompt = () => {
     height: 36px;
     border-radius: 50%;
     object-fit: cover;
-    border: 1px solid rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--app-border-color);
 }
 
 .empty-state {
@@ -456,6 +461,6 @@ const showSearchPrompt = () => {
     align-items: center;
     justify-content: center;
     padding: 64px 32px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 </style>

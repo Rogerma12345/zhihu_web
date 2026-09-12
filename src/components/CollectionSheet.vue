@@ -32,30 +32,24 @@ const createData = reactive({
 const fetchCollections = async () => {
     if (isLoading.value) return;
     isLoading.value = true;
-
     try {
-        let res;
-        if (!lastResult.value) {
-            const url = `https://api.zhihu.com/collections/contents/${props.contentType}/${props.contentId}?limit=20`;
-            res = await $http.get(url);
-        } else {
-            res = await lastResult.value.next();
-        }
-        
-        const rawList = res.data || [];
-
-        lastResult.value = res;
-        const formatted = rawList.map(item => ({
-            id: item.id,
-            title: item.title,
-            selected: !!item.is_favorited,
-            originalSelected: !!item.is_favorited
-        }));
-
-        collections.value.push(...formatted);
-
-        if (!res.paging?.is_end) {
-            await fetchCollections();
+        const url = `https://api.zhihu.com/collections/contents/${props.contentType}/${props.contentId}?limit=20`;
+        let cursor = lastResult.value;
+        const seen = new Set();
+        while (true) {
+            const res = cursor ? await cursor.next() : await $http.get(url);
+            if (!res) break;
+            const rawList = res.data || [];
+            collections.value.push(...rawList.map(item => ({
+                id: item.id,
+                title: item.title,
+                selected: !!item.is_favorited,
+                originalSelected: !!item.is_favorited
+            })));
+            lastResult.value = res;
+            if (res.paging?.is_end || !res.paging?.next || seen.has(res.paging.next)) break;
+            seen.add(res.paging.next);
+            cursor = res;
         }
     } catch (e) {
         console.error('Failed to fetch collections:', e);
@@ -63,7 +57,6 @@ const fetchCollections = async () => {
         isLoading.value = false;
     }
 };
-
 const handleConfirm = async () => {
     if (isSaving.value) return;
 
@@ -230,7 +223,7 @@ const handleClose = () => {
     justify-content: space-between;
     align-items: center;
     padding: 16px 24px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--app-border-color);
 }
 
 .title {

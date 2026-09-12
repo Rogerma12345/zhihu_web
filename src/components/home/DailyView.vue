@@ -116,7 +116,7 @@ onMounted(() => {
     padding: 16px 16px 8px;
     font-size: 14px;
     font-weight: 600;
-    color: #8e8e93;
+    color: var(--app-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -152,12 +152,12 @@ onMounted(() => {
     font-size: 17px;
     font-weight: 700;
     line-height: 1.4;
-    color: #1a1a1a;
+    color: var(--f7-text-color);
 }
 
 .story-hint {
     font-size: 13px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 
 .card-image {
@@ -166,7 +166,7 @@ onMounted(() => {
     flex-shrink: 0;
     border-radius: 8px;
     overflow: hidden;
-    background: #f0f0f0;
+    background: var(--app-placeholder-bg);
 }
 
 .card-image img {
@@ -178,6 +178,6 @@ onMounted(() => {
 .empty-state {
     padding: 100px 32px;
     text-align: center;
-    color: #999;
+    color: var(--app-text-muted);
 }
 </style>

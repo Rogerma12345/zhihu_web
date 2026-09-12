@@ -78,6 +78,10 @@ const fetchContents = async (isRefresh = false) => {
             res = await lastResult.value.next();
         }
 
+        if (!res) {
+            hasMore.value = false;
+            return;
+        }
         const rawList = res.data || [];
 
         const mappedItems = rawList.map(item => mapContentItem(item));
@@ -87,7 +91,7 @@ const fetchContents = async (isRefresh = false) => {
             items.value.push(...mappedItems);
         }
         lastResult.value = res;
-        hasMore.value = !res.paging?.is_end;
+        hasMore.value = res.paging?.is_end !== true && Boolean(res.paging?.next);
     } catch (e) {
         console.error('Failed to fetch collection contents:', e);
     } finally {
@@ -227,7 +231,8 @@ onMounted(() => {
 </script>
 
 <template>
-    <f7-page name="collection-detail" ptr @ptr:refresh="onRefresh" infinite @infinite="onInfinite"
+    <f7-page name="collection-detail" ptr @ptr:refresh="onRefresh" infinite
+        :infinite-preloader="isLoading && hasMore" @infinite="onInfinite"
         :ref="(el) => pageRef = el">
         <f7-navbar :title="collectionInfo?.title || '收藏夹详情'" back-link="返回">
             <f7-nav-right>
@@ -321,12 +326,12 @@ onMounted(() => {
     font-weight: 700;
     line-height: 1.4;
     margin-bottom: 6px;
-    color: #333;
+    color: var(--f7-text-color);
 }
 
 .content-preview {
     font-size: 14px;
-    color: #666;
+    color: var(--app-text-secondary);
     display: -webkit-box;
     -webkit-line-clamp: 3;
     line-clamp: 3;
@@ -338,7 +343,7 @@ onMounted(() => {
 
 .content-metrics {
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .dot {
@@ -351,7 +356,7 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
     padding: 64px 32px;
-    color: #8e8e93;
+    color: var(--app-text-muted);
 }
 
 .no-more {

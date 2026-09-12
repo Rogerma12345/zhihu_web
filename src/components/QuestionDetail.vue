@@ -124,7 +124,7 @@ const fetchAnswers = async (isRefresh = false) => {
             }
 
             lastResult.value = res;
-            hasMore.value = !res.paging?.is_end;
+            hasMore.value = res.paging?.is_end !== true && Boolean(res.paging?.next);
         }
     } catch (err) {
         console.error('Failed to fetch answers:', err);
@@ -204,7 +204,7 @@ watch(sortOrder, () => {
 </script>
 
 <template>
-    <f7-page class="question-detail" ptr @ptr:refresh="onRefresh" infinite :infinite-preloader="hasMore"
+    <f7-page class="question-detail" ptr @ptr:refresh="onRefresh" infinite :infinite-preloader="isLoadingMore && hasMore"
         @infinite="onLoadMore" :ref="(el) => pageRef = el">
         <f7-navbar>
             <f7-nav-left>
@@ -280,7 +280,7 @@ watch(sortOrder, () => {
             </f7-block>
 
             <div
-                class="answers-header-bar padding-horizontal display-flex justify-content-space-between align-items-center bg-color-white">
+                class="answers-header-bar padding-horizontal display-flex justify-content-space-between align-items-center app-surface-bg">
                 <f7-block-title class="no-margin">{{ question.answerCount }} 个回答</f7-block-title>
                 <div class="sort-selector">
                     <f7-link :class="{ 'active-sort': sortOrder === 'default' }"
@@ -355,7 +355,7 @@ watch(sortOrder, () => {
 }
 
 .answers-header-bar {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    border-bottom: 1px solid var(--app-border-color);
     height: 44px;
 }
 
@@ -367,7 +367,7 @@ watch(sortOrder, () => {
 }
 
 .sort-selector .f7-link {
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .sort-selector .f7-link.active-sort {
@@ -406,7 +406,7 @@ watch(sortOrder, () => {
     justify-content: space-between;
     padding: 12px 16px;
     height: 56px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--app-border-color);
     flex-shrink: 0;
     z-index: 30;
 }
@@ -563,7 +563,7 @@ watch(sortOrder, () => {
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    border-bottom: 1px solid var(--app-border-color);
 }
 
 .answers-title {

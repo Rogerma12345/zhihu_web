@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, nextTick, computed, onUnmounted } from 'vue';
+import { ref, onMounted, nextTick, onUnmounted } from 'vue';
 
 import TabLayout from './TabLayout.vue';
 import FeedCard from './FeedCard.vue';
@@ -84,10 +84,6 @@ const SEARCH_TABS = [
 ];
 
 // 获取当前标签页是否还有更多结果
-const currentTabHasMore = computed(() => {
-    const tab = tabSearchResults.value[activeTab.value];
-    return tab && tab.hasMore;
-});
 
 // 获取指定标签页的搜索结果
 const getTabResults = (tabId) => {
@@ -181,7 +177,7 @@ const executeSearch = async (newSearch = false, tabId = activeTab.value) => {
     const currentTab = tabSearchResults.value[tabId];
 
     // 没有更多结果或正在加载时不再请求
-    if (!currentTabHasMore.value || isLoadingResults.value) {
+    if (!currentTab.hasMore || isLoadingResults.value) {
         return;
     }
 
@@ -205,6 +201,10 @@ const executeSearch = async (newSearch = false, tabId = activeTab.value) => {
             res = await $http.get(searchUrl);
         }
 
+        if (!res) {
+            currentTab.hasMore = false;
+            return;
+        }
         const apiData = res.data;
         const formattedResults = [];
 
@@ -283,7 +283,7 @@ const executeSearch = async (newSearch = false, tabId = activeTab.value) => {
 
         // 保存lastResult和更新是否还有更多结果
         currentTab.lastResult = res;
-        currentTab.hasMore = !!res.paging?.is_end;
+        currentTab.hasMore = res.paging?.is_end !== true && Boolean(res.paging?.next);
     } catch (error) {
         console.error('搜索失败:', error);
     } finally {
@@ -344,7 +344,7 @@ const fetchSearchSuggestions = async (value) => {
     isLoadingSuggestions.value = true;
     try {
         const suggestUrl = `https://www.zhihu.com/api/v4/search/suggest?q=${encodeURIComponent(value)}`;
-        const res = await $http.get(suggestUrl);
+        const res = await $http.get(suggestUrl, { isWWW: true });
         if (res && res.suggest && res.suggest) {
             searchSuggestions.value = res.suggest;
             showSuggestions.value = true;
@@ -443,6 +443,7 @@ const handleTabLoadMore = async (tabId) => {
                 <!-- 每个标签页的内容 -->
                 <template v-for="tab in SEARCH_TABS" :key="tab.id" #[tab.id]>
                     <f7-page-content :ref="el => tabRefs[tab.id] = el" ptr @ptr:refresh="(done) => handleTabRefresh(tab.id, done)" infinite
+                        :infinite-preloader="isLoadingResults && getTabResults(tab.id).hasMore"
                         @infinite="handleTabLoadMore(tab.id)">
                         <!-- 有结果：显示列表 -->
                         <div v-if="getTabResults(tab.id).results.length > 0" class="results-list">
@@ -450,7 +451,7 @@ const handleTabLoadMore = async (tabId) => {
                                 :item="item" @click="$handleCardClick(f7router, item)"
                                 class="result-card margin-bottom" />
 
-                            <div v-if="getTabResults(tab.id).hasMore"
+                            <div v-if="!getTabResults(tab.id).hasMore"
                                 class="end-message text-color-gray text-align-center padding">
                                 已加载全部搜索结果
                             </div>
@@ -522,7 +523,7 @@ const handleTabLoadMore = async (tabId) => {
     align-items: center;
     padding: 8px;
     gap: 8px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--app-border-color);
     z-index: 10;
 }
 
@@ -548,7 +549,7 @@ const handleTabLoadMore = async (tabId) => {
 .empty-hint {
     margin-top: 8px;
     font-size: 14px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 .retry-button {
@@ -558,7 +559,7 @@ const handleTabLoadMore = async (tabId) => {
 .end-message {
     text-align: center;
     font-size: 14px;
-    color: #999;
+    color: var(--app-text-muted);
     padding: 16px 0;
 }
 
@@ -577,7 +578,7 @@ const handleTabLoadMore = async (tabId) => {
 .section-title {
     font-weight: bold;
     font-size: 16px;
-    color: #333;
+    color: var(--f7-text-color);
     margin-bottom: 16px;
     display: block;
 }
@@ -598,7 +599,7 @@ const handleTabLoadMore = async (tabId) => {
 }
 
 .trending-item:hover {
-    background-color: #f5f5f5;
+    background-color: var(--app-soft-bg);
 }
 
 .trending-rank {
@@ -606,7 +607,7 @@ const handleTabLoadMore = async (tabId) => {
     text-align: center;
     font-weight: bold;
     font-size: 14px;
-    color: #666;
+    color: var(--app-text-secondary);
 }
 
 .top-rank {
@@ -617,20 +618,20 @@ const handleTabLoadMore = async (tabId) => {
     flex: 1;
     margin-left: 12px;
     font-weight: 500;
-    color: #333;
+    color: var(--f7-text-color);
 }
 
 .trending-hot {
     font-size: 12px;
-    color: #999;
+    color: var(--app-text-muted);
 }
 
 /* 搜索结果统计样式 */
 .results-count {
     font-size: 14px;
-    color: #666;
+    color: var(--app-text-secondary);
     margin-bottom: 16px;
     padding-bottom: 8px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    border-bottom: 1px solid var(--app-border-color);
 }
 </style>

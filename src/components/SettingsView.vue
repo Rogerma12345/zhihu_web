@@ -470,7 +470,7 @@ loadThemeSettings();
 
             <div v-if="isCustomColorEnabled" class="display-flex align-items-center margin-top-half">
                 <div class="custom-color-picker-target margin-right"
-                    style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid #ccc; flex-shrink: 0;"
+                    style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--app-border-color); flex-shrink: 0;"
                     :style="{ backgroundColor: customColorPickerValue.hex || '#007aff' }">
                 </div>
                 <f7-input type="colorpicker" placeholder="点击选择颜色" readonly :color-picker-params="{
@@ -621,7 +621,7 @@ loadThemeSettings();
 .city-list-scroll {
     height: 300px;
     overflow-y: auto;
-    background: #f5f5f5;
+    background: var(--app-soft-bg);
     padding: 10px;
     border-radius: 8px;
     margin-top: 10px;
@@ -630,12 +630,12 @@ loadThemeSettings();
 .city-list-text {
     white-space: pre-wrap;
     font-size: 13px;
-    color: #666;
+    color: var(--app-text-secondary);
     line-height: 1.5;
 }
 
 .city-input {
-    border: 1px solid #ddd;
+    border: 1px solid var(--app-border-color);
     border-radius: 8px;
     padding: 8px;
     width: 100%;

@@ -79,7 +79,7 @@ const handleCardClick = () => {
     top: 12px;
     right: 12px;
     cursor: pointer;
-    color: #999;
+    color: var(--app-text-muted);
     z-index: 10;
 }
 
@@ -110,7 +110,7 @@ const handleCardClick = () => {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: #f0f0f0;
+    background-color: var(--app-placeholder-bg);
     border-radius: 50%;
     z-index: 0;
 }
@@ -123,12 +123,12 @@ const handleCardClick = () => {
     font-size: 18px;
     font-weight: 700;
     margin: 0;
-    color: #333;
+    color: var(--f7-text-color);
 }
 
 .recommend-user-headline {
     font-size: 14px;
-    color: #666;
+    color: var(--app-text-secondary);
     margin: 4px 0 0;
     line-height: 1.4;
 }
@@ -138,7 +138,7 @@ const handleCardClick = () => {
     align-items: center;
     gap: 6px;
     font-size: 14px;
-    color: #999;
+    color: var(--app-text-muted);
     margin-top: 8px;
 }
 </style>

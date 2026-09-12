@@ -60,6 +60,12 @@ jobs:
             ./deploy/sync-upstream.sh
           fi
 
+      - name: Verify fork source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/verify-project-fixes.py .
+
       - name: Check synchronized workspace
         if: steps.prepare.outputs.upstream_changed == 'true'
         shell: bash
@@ -72,31 +78,23 @@ jobs:
           test -f vite.config.js
           test -f workbox-config.js
           test -f deploy/nginx.conf
-
+          python3 deploy/verify-project-fixes.py .
           if ! git diff --quiet -- \
             Dockerfile \
             .dockerignore \
             deploy \
             SELFHOST.md \
             .github/workflows \
-            .upstream-state \
-            src/components/FeedCard.vue \
-            src/components/home/HotListCard.vue \
-            src/style.css
+            .upstream-state
           then
             echo "Fork-managed files changed before publication" >&2
-
             git diff -- \
               Dockerfile \
               .dockerignore \
               deploy \
               SELFHOST.md \
               .github/workflows \
-              .upstream-state \
-              src/components/FeedCard.vue \
-              src/components/home/HotListCard.vue \
-              src/style.css >&2
-
+              .upstream-state >&2
             exit 1
           fi
 
@@ -253,35 +251,25 @@ jobs:
           printf 'upstream_sha=%s\nlast_activity=%s\n' \
             "$upstream_sha" \
             "$now_iso" > .upstream-state
-
           if ! git diff --quiet -- \
             Dockerfile \
             .dockerignore \
             deploy \
             SELFHOST.md \
-            .github/workflows \
-            src/components/FeedCard.vue \
-            src/components/home/HotListCard.vue \
-            src/style.css
+            .github/workflows
           then
             echo "Refusing to commit automatic fork-managed changes" >&2
-
             git diff -- \
               Dockerfile \
               .dockerignore \
               deploy \
               SELFHOST.md \
-              .github/workflows \
-              src/components/FeedCard.vue \
-              src/components/home/HotListCard.vue \
-              src/style.css >&2
-
+              .github/workflows >&2
             exit 1
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add -A
           git commit -m "chore: sync upstream ${upstream_sha:0:12}"
           git push origin HEAD:main
