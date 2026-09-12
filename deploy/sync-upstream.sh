@@ -24,7 +24,6 @@ emit_output() {
   local value="$2"
 
   printf '%s=%s\n' "$key" "$value"
-
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     printf '%s=%s\n' "$key" "$value" >> "$GITHUB_OUTPUT"
   fi
@@ -48,7 +47,6 @@ cd "$repo_root"
 
 command -v rsync >/dev/null 2>&1 \
   || fail "rsync is required"
-
 command -v tar >/dev/null 2>&1 \
   || fail "tar is required"
 
@@ -71,7 +69,6 @@ upstream_sha="$(git rev-parse FETCH_HEAD)"
 
 [[ "$upstream_sha" =~ ^[0-9a-f]{40}$ ]] \
   || fail "could not resolve upstream HEAD SHA"
-
 emit_output upstream_sha "$upstream_sha"
 
 if [[ "$upstream_sha" == "$state_sha" ]]; then
@@ -117,7 +114,6 @@ if ((${#conflicts[@]} > 0)); then
   for path in "${conflicts[@]}"; do
     printf '  - %s\n' "$path" >&2
   done
-
   printf '[sync-upstream] Refusing to overwrite fork-managed content. Resolve manually.\n' >&2
 
   if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
@@ -127,9 +123,11 @@ if ((${#conflicts[@]} > 0)); then
   exit 1
 fi
 
+# Fork 中有意维护的源码文件。上游同步时保留这些文件，避免本地修复被覆盖。
 fork_preserve_paths=(
   "src/components/FeedCard.vue"
   "src/components/home/HotListCard.vue"
+  "src/components/home/HomeView.vue"
   "src/style.css"
 )
 
@@ -165,5 +163,4 @@ rsync \
   "$repo_root/"
 
 emit_output upstream_changed true
-
 log "workspace synchronized to upstream $upstream_sha; state file intentionally not updated yet"
