@@ -61,6 +61,30 @@ const loadSettings = () => {
     }
 };
 
+loadSettings();
+
+const initDynamicHomeScrollFeatures = async () => {
+    await nextTick();
+
+    const pageEl =
+        document.querySelector('.page-current[data-name="home"]') ||
+        document.querySelector('.page[data-name="home"]');
+
+    if (!pageEl) return;
+
+    pageEl.querySelectorAll('.ptr-content').forEach((el) => {
+        if (!el.f7PullToRefresh && f7?.ptr?.create) {
+            f7.ptr.create(el);
+        }
+    });
+
+    pageEl.querySelectorAll('.infinite-scroll-content').forEach((el) => {
+        if (!el.f7InfiniteScrollHandler && f7?.infiniteScroll?.create) {
+            f7.infiniteScroll.create(el);
+        }
+    });
+};
+
 const hasNextPage = (result) => {
     return Boolean(
         result?.paging &&
@@ -69,12 +93,7 @@ const hasNextPage = (result) => {
     );
 };
 
-/*
- * Framework7 的 infinite scroll 只在滚动事件发生时检查是否接近底部。
- * 双栏桌面布局中，接口首批有效卡片可能不足一屏，此时根本不会产生滚动事件。
- * 这里在 DOM 更新后主动检查可滚动高度，不足一屏就继续请求下一页。
- * 限制最多连续补 6 页，避免异常 API 返回空数据时形成无限请求。
- */
+
 const viewportFillRounds = new Map();
 const MAX_VIEWPORT_FILL_ROUNDS = 6;
 
@@ -911,6 +930,7 @@ let unsubscribeUserUpdate = null;
 
 const handleHomeSettingsChanged = async () => {
     loadSettings();
+    await initDynamicHomeScrollFeatures();
     await fetchRecommendSections();
     loadCurrentTabData();
     nextTick(ensureActiveTabViewport);
@@ -918,7 +938,6 @@ const handleHomeSettingsChanged = async () => {
 
 onMounted(async () => {
     isMobile.value = !f7.device.desktop;
-    loadSettings();
 
     window.addEventListener('home-settings-changed', handleHomeSettingsChanged);
     window.addEventListener('home-recommendtab-settings-changed', fetchRecommendSections);
@@ -926,6 +945,8 @@ onMounted(async () => {
     unsubscribeUserUpdate = onUserUpdate(async () => {
         if (!isLoggedIn.value) return;
 
+        // 登录后“关注”页的 page-content 是 pageInit 之后动态加入的，补做初始化。
+        await initDynamicHomeScrollFeatures();
         await fetchRecommendSections();
 
         // 如果登录发生在“关注”页，登录提示消失后立即加载当前关注流。
@@ -1182,11 +1203,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/*
- * HomeView 使用多个独立滚动区域，因此关闭 f7-page 自动 page-content。
- * 每个主 Tab 用 home-tab-shell 自己处理固定 Navbar / 顶部 Tabbar 的占位，
- * 这样实际滚动元素始终是内部 f7-page-content，Infinite Scroll 监听对象正确。
- */
+
 .home-tab-shell {
     width: 100%;
     height: 100%;
@@ -1194,7 +1211,6 @@ onUnmounted(() => {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    /* 桌面端固定 Navbar + 顶部主 Tabbar 都不占普通文档流，显式留出它们的高度。 */
     padding-top: calc(
         var(--f7-navbar-height) +
         var(--f7-safe-area-top) +
@@ -1202,13 +1218,11 @@ onUnmounted(() => {
     );
 }
 
-/* 移动端没有顶部主 Tabbar，但有底部图标 Tabbar。 */
 :global(.home-mobile) .home-tab-shell {
     padding-top: calc(var(--f7-navbar-height) + var(--f7-safe-area-top));
     padding-bottom: calc(var(--f7-tabbar-icons-height) + var(--f7-safe-area-bottom));
 }
 
-/* 真正的滚动容器。外层 shell 已经处理固定栏 offset，因此这里不再重复 padding。 */
 .home-scroll-content {
     flex: 1 1 auto;
     min-height: 0;
@@ -1217,7 +1231,6 @@ onUnmounted(() => {
     padding-bottom: 0 !important;
 }
 
-/* 关注页内部 TabLayout 也必须限制在 shell 的剩余高度中。 */
 .home-following-layout {
     flex: 1 1 auto;
     min-height: 0;
@@ -1257,7 +1270,6 @@ onUnmounted(() => {
     background: var(--f7-page-bg-color);
 }
 
-/* TabLayout 已经把内部 tabs 限制在剩余高度；这里保留一个真正的 100% 滚动容器。 */
 .moments-scroll-content {
     height: 100% !important;
     padding-top: 0 !important;
