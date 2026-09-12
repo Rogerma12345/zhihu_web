@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { htmlToPlainText } from '../../utils/content-text.js'
 
 const props = defineProps(['item'])
 defineEmits(['click'])
@@ -15,13 +16,12 @@ const isCollapsibleGroup = () => {
 }
 
 const getGroupText = () => {
-  return props.item.groupText
+  return htmlToPlainText(props.item.groupText || '')
 }
 
 const getAllItems = () => {
   return isCollapsibleGroup() ? props.item.groupData : [props.item]
 }
-
 const getUnfoldShowSize = () => {
   return isCollapsibleGroup() ? props.item.unfoldShowSize : 0
 }
@@ -37,15 +37,17 @@ const getRemainingCount = () => {
   const unfoldSize = getUnfoldShowSize()
   return allItems.length - (unfoldSize || allItems.length)
 }
-</script>
 
+const getPlainTitle = (item) => htmlToPlainText(item?.title || '')
+const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
+</script>
 <template>
     <f7-card class="moment-card">
         <!-- 顶部groupText：仅当不是折叠组时显示 -->
         <div v-if="!isCollapsibleGroup() && getGroupText()" class="moment-group-text-top">
             {{ getGroupText() }}
         </div>
-        
+
         <f7-card-header class="moment-header-single">
             <div class="moment-author-info">
                 <img :src="item.avatarUrl" class="moment-avatar" />
@@ -53,11 +55,10 @@ const getRemainingCount = () => {
                 <span class="moment-action-time">{{ item.actionText }} · {{ item.timeText }}</span>
             </div>
         </f7-card-header>
-
         <f7-card-content>
             <f7-list media-list>
-                <f7-list-item 
-                    v-for="(listItem, index) in getDisplayItems()" 
+                <f7-list-item
+                    v-for="(listItem, index) in getDisplayItems()"
                     :key="index"
                     class="moment-list-item"
                     @click="$emit('click', listItem)"
@@ -65,13 +66,13 @@ const getRemainingCount = () => {
                     <div slot="inner" class="moment-item-inner">
                         <div class="moment-item-content">
                             <div slot="title" class="moment-item-title">
-                                <h3 v-if="listItem.title" class="moment-title">{{ listItem.title }}</h3>
+                                <h3 v-if="getPlainTitle(listItem)" class="moment-title">{{ getPlainTitle(listItem) }}</h3>
                             </div>
-                            
+
                             <div slot="text" class="moment-item-excerpt">
-                                <div class="moment-excerpt">{{ listItem.excerpt }}</div>
+                                <div class="moment-excerpt">{{ getPlainExcerpt(listItem) }}</div>
                             </div>
-                            
+
                             <div slot="footer" class="moment-item-metrics">
                                 <div class="moment-metrics-row-simple">
                                     <span class="metric">
@@ -87,20 +88,20 @@ const getRemainingCount = () => {
                 </f7-list-item>
             </f7-list>
         </f7-card-content>
-        
+
         <!-- 底部groupText：仅当是折叠组且有剩余项目且未展开时显示 -->
         <f7-card-footer v-if="isCollapsibleGroup() && getRemainingCount() > 0 && !expanded" class="moment-group-text-footer">
             {{ getGroupText() }}
         </f7-card-footer>
-        
+
         <!-- 展开/折叠按钮 -->
         <f7-card-footer v-if="getRemainingCount() > 0" class="moment-expand-footer" @click="toggleExpand">
             <div class="moment-expand-toggle">
                 <span class="expand-text">
                     {{ expanded ? '收起' : `查看更多 ${getRemainingCount()} 条` }}
                 </span>
-                <f7-icon 
-                    :ios="expanded ? 'f7:chevron_up' : 'f7:chevron_down'" 
+                <f7-icon
+                    :ios="expanded ? 'f7:chevron_up' : 'f7:chevron_down'"
                     :md="expanded ? 'material:keyboard_arrow_up' : 'material:keyboard_arrow_down'"
                     class="expand-icon"
                     size="14"
@@ -109,7 +110,6 @@ const getRemainingCount = () => {
         </f7-card-footer>
     </f7-card>
 </template>
-
 <style scoped>
 .moment-card {
     margin-bottom: 8px;
@@ -139,7 +139,6 @@ const getRemainingCount = () => {
     border-radius: 50%;
     object-fit: cover;
 }
-
 .moment-author-name {
     font-weight: 700;
     font-size: 14px;
@@ -158,7 +157,7 @@ const getRemainingCount = () => {
 
 .moment-list-item {
     cursor: pointer;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--f7-list-item-border-color, var(--app-border-color));
 }
 
 .moment-list-item:last-child {
@@ -170,7 +169,6 @@ const getRemainingCount = () => {
     align-items: flex-start;
     width: 100%;
 }
-
 .moment-item-content {
     width: 100%;
 }
@@ -201,7 +199,6 @@ const getRemainingCount = () => {
 .moment-item-metrics {
     margin-top: 8px;
 }
-
 .moment-metrics-row-simple {
     display: flex;
     gap: 16px;
@@ -218,7 +215,7 @@ const getRemainingCount = () => {
 
 /* 展开/折叠按钮样式 */
 .moment-expand-footer {
-    border-top: 1px solid #f0f0f0;
+    border-top: 1px solid var(--f7-list-item-border-color, var(--app-border-color));
     cursor: pointer;
     text-align: center;
 }
@@ -231,7 +228,6 @@ const getRemainingCount = () => {
     font-size: 14px;
     font-weight: 500;
 }
-
 .expand-text {
     color: var(--f7-list-item-title-text-color);
 }

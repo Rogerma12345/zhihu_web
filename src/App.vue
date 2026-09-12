@@ -9,20 +9,54 @@ import routes from './f7-routes.js';
 import store from './store.js';
 import { checkTipVersion } from './utils/tip_manager.js';
 import { installPagedScroll } from './utils/paged-scroll.js';
-
 const { resetUser, refreshUser } = useUser();
 
 const isMoreDialogOpen = ref(false);
 const isMobile = ref(false);
 const isNativeApp = ref(false);
-
 const basePath = window.location.pathname.endsWith('/')
   ? window.location.pathname
   : window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+
+const readStoredThemeConfig = () => {
+  try {
+    const stored = localStorage.getItem('theme_config');
+    if (!stored) return {};
+    const parsed = JSON.parse(stored);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    console.error('Failed to read initial theme settings', error);
+    return {};
+  }
+};
+
+const resolveDarkMode = (config) => {
+  if (config?.followSystem) {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  return config?.darkMode === true;
+};
+
+const applyDarkMode = (app, enabled) => {
+  const dark = Boolean(enabled);
+  // Apply the class immediately as well as through Framework7. This avoids a
+  // light first render and keeps the theme correct even if another initializer
+  // fails before Framework7 finishes restoring persisted settings.
+  document.documentElement.classList.toggle('dark', dark);
+  if (app && typeof app.setDarkMode === 'function') {
+    app.setDarkMode(dark);
+  }
+};
+
+const initialThemeConfig = readStoredThemeConfig();
+const initialDarkMode = resolveDarkMode(initialThemeConfig);
+document.documentElement.classList.toggle('dark', initialDarkMode);
+
 // Framework7 Parameters
 const f7params = {
   name: 'Zhihu Lite',
   theme: 'auto',
+  darkMode: initialDarkMode,
   routes: routes, // Pass routes here
   toast: {
     closeTimeout: 3000,
@@ -35,11 +69,15 @@ const f7params = {
     path: basePath + 'service-worker.js',
   } : {},
 };
-
 onMounted(async () => {
   f7ready((f7) => {
-    installPagedScroll(f7);
+    // Theme restoration must not depend on optional scrolling enhancements.
     loadThemeSettings(f7);
+    try {
+      installPagedScroll(f7);
+    } catch (error) {
+      console.error('Failed to install paged scroll enhancements', error);
+    }
 
     // 首次打开提示
     checkTipVersion('welcome_tip', 1769350802686, () => {
@@ -52,7 +90,6 @@ onMounted(async () => {
         window.open('https://github.com/zhihulite/zhihu_web', '_blank');
       });
     });
-
     // 仅在默认默认开启时处理
     const panel = f7.panel.get("left");
     if (panel.opened) {
@@ -69,7 +106,6 @@ onMounted(async () => {
       const handlePanelClose = () => {
         localStorage.setItem(PANEL_CLOSED_KEY, 'true');
       };
-
       panel.on('open', handlePanelOpen);
       panel.on('close', handlePanelClose);
 
@@ -82,14 +118,14 @@ onMounted(async () => {
 
 
 let themeListener = null;
-
+let themeMediaQuery = null;
 const handleSystemThemeChange = (e) => {
   try {
     const stored = localStorage.getItem('theme_config');
     if (stored) {
       const config = JSON.parse(stored);
       if (config.followSystem) {
-        if (f7) f7.setDarkMode(e.matches);
+        applyDarkMode(f7, e.matches);
       }
     }
   } catch (err) { console.error(err); }
@@ -97,50 +133,51 @@ const handleSystemThemeChange = (e) => {
 
 const loadThemeSettings = (f7) => {
   try {
-    const stored = localStorage.getItem('theme_config');
-    if (stored) {
-      const config = JSON.parse(stored);
+    const config = readStoredThemeConfig();
+    if (config.followSystem) {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      applyDarkMode(f7, mq.matches);
 
-      if (config.followSystem) {
-        const mq = window.matchMedia('(prefers-color-scheme: dark)');
-        f7.setDarkMode(mq.matches);
-
-        if (themeListener) mq.removeEventListener('change', themeListener);
-        themeListener = handleSystemThemeChange;
-        mq.addEventListener('change', themeListener);
-      } else {
-        if (config.darkMode !== undefined) {
-          f7.setDarkMode(config.darkMode);
-        }
+      if (themeMediaQuery && themeListener) {
+        themeMediaQuery.removeEventListener('change', themeListener);
       }
-
-      if (config.fontSize) {
-        document.documentElement.style.setProperty('--f7-font-size', config.fontSize);
+      themeMediaQuery = mq;
+      themeListener = handleSystemThemeChange;
+      themeMediaQuery.addEventListener('change', themeListener);
+    } else {
+      if (themeMediaQuery && themeListener) {
+        themeMediaQuery.removeEventListener('change', themeListener);
+        themeMediaQuery = null;
+        themeListener = null;
       }
-      if (config.useCustomColor && config.customColor && typeof config.customColor === 'string' && config.customColor.trim() !== '') {
-        f7.setColorTheme(config.customColor);
-      } else if (config.color && f7.colors[config.color]) {
-        f7.setColorTheme(f7.colors[config.color]);
-      }
-      let scheme = 'default';
-      const mono = config.monochrome;
-      const vib = config.vibrant;
-      if (mono && vib) scheme = 'monochrome-vibrant';
-      else if (mono) scheme = 'monochrome';
-      else if (vib) scheme = 'vibrant';
-      f7.setMdColorScheme(scheme);
+      applyDarkMode(f7, config.darkMode === true);
     }
+    if (config.fontSize) {
+      document.documentElement.style.setProperty('--f7-font-size', config.fontSize);
+    }
+    if (config.useCustomColor && config.customColor && typeof config.customColor === 'string' && config.customColor.trim() !== '') {
+      f7.setColorTheme(config.customColor);
+    } else if (config.color && f7.colors[config.color]) {
+      f7.setColorTheme(f7.colors[config.color]);
+    }
+    let scheme = 'default';
+    const mono = config.monochrome;
+    const vib = config.vibrant;
+    if (mono && vib) scheme = 'monochrome-vibrant';
+    else if (mono) scheme = 'monochrome';
+    else if (vib) scheme = 'vibrant';
+    f7.setMdColorScheme(scheme);
   } catch (e) {
     console.error('Failed to load theme settings in App', e);
   }
 };
-
 onUnmounted(() => {
-  if (themeListener) {
-    window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', themeListener);
+  if (themeMediaQuery && themeListener) {
+    themeMediaQuery.removeEventListener('change', themeListener);
   }
+  themeMediaQuery = null;
+  themeListener = null;
 });
-
 const handleLogout = () => {
   if (window.confirm("确定要退出登录吗？")) {
     logout().then(() => {
@@ -159,7 +196,6 @@ const browserHistoryRoot = ref(isNativeApp.value ? undefined : window.location.p
 
 <template>
   <f7-app v-bind="f7params" :store="store">
-
     <f7-view main class="safe-areas" url="/" :browserHistory="!isNativeApp" :browserHistoryRoot="browserHistoryRoot"
       :restoreScrollTopOnBack="false"></f7-view>
 
@@ -170,7 +206,6 @@ const browserHistoryRoot = ref(isNativeApp.value ? undefined : window.location.p
         </f7-page>
       </f7-view>
     </f7-panel>
-
     <MoreMenuDialog v-model="isMoreDialogOpen" :f7router="f7.views?.main?.router" />
   </f7-app>
 </template>
