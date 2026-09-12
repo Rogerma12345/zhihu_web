@@ -1,6 +1,10 @@
-**
-!Dockerfile
-!html/
-!html/**
-!deploy/
-!deploy/**
+.git
+.github
+.vscode
+
+node_modules
+html
+
+*.log
+npm-debug.log*
+.DS_Store

@@ -3,6 +3,7 @@ name: Sync upstream and publish GHCR
 on:
   schedule:
     - cron: "27 3 * * *"
+
   workflow_dispatch:
     inputs:
       force_build:
@@ -10,15 +11,10 @@ on:
         required: false
         type: boolean
         default: false
+
   push:
     branches:
       - main
-    paths:
-      - "html/**"
-      - "Dockerfile"
-      - ".dockerignore"
-      - "deploy/**"
-      - ".github/workflows/sync-ghcr.yml"
 
 permissions:
   contents: write
@@ -50,11 +46,14 @@ jobs:
 
           if [[ "${{ github.event_name }}" == "push" ]]; then
             upstream_sha="$(awk -F= '$1 == "upstream_sha" { print $2; exit }' .upstream-state)"
+
             if [[ ! "$upstream_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
               echo "Invalid upstream_sha in .upstream-state" >&2
               exit 1
             fi
+
             upstream_sha="${upstream_sha,,}"
+
             echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
             echo "upstream_changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -66,11 +65,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -f html/index.html
 
-          if ! git diff --quiet -- Dockerfile .dockerignore deploy SELFHOST.md .github/workflows .upstream-state; then
-            echo "Fork-managed overlay or upstream state changed before publication" >&2
-            git diff -- Dockerfile .dockerignore deploy SELFHOST.md .github/workflows .upstream-state >&2
+          test -f src/index.html
+          test -f package.json
+          test -f package-lock.json
+          test -f vite.config.js
+          test -f workbox-config.js
+          test -f deploy/nginx.conf
+
+          if ! git diff --quiet -- \
+            Dockerfile \
+            .dockerignore \
+            deploy \
+            SELFHOST.md \
+            .github/workflows \
+            .upstream-state \
+            src/components/FeedCard.vue \
+            src/components/home/HotListCard.vue \
+            src/style.css
+          then
+            echo "Fork-managed files changed before publication" >&2
+
+            git diff -- \
+              Dockerfile \
+              .dockerignore \
+              deploy \
+              SELFHOST.md \
+              .github/workflows \
+              .upstream-state \
+              src/components/FeedCard.vue \
+              src/components/home/HotListCard.vue \
+              src/style.css >&2
+
             exit 1
           fi
 
@@ -81,10 +107,13 @@ jobs:
           set -euo pipefail
 
           should_build=false
+
           if [[ "${{ github.event_name }}" == "push" ]]; then
             should_build=true
+
           elif [[ "${{ steps.prepare.outputs.upstream_changed }}" == "true" ]]; then
             should_build=true
+
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_build }}" == "true" ]]; then
             should_build=true
           fi
@@ -99,7 +128,9 @@ jobs:
           set -euo pipefail
 
           upstream_sha="${{ steps.prepare.outputs.upstream_sha }}"
+
           last_activity="$(awk -F= '$1 == "last_activity" { print $2; exit }' .upstream-state)"
+
           if [[ -z "$last_activity" ]]; then
             echo "Missing last_activity in .upstream-state" >&2
             exit 1
@@ -107,13 +138,17 @@ jobs:
 
           now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           now_epoch="$(date -u +%s)"
+
           last_epoch="$(date -u -d "$last_activity" +%s)" || {
             echo "Invalid last_activity in .upstream-state: $last_activity" >&2
             exit 1
           }
 
           if (( now_epoch - last_epoch >= 30 * 24 * 60 * 60 )); then
-            printf 'upstream_sha=%s\nlast_activity=%s\n' "$upstream_sha" "$now_iso" > .upstream-state
+            printf 'upstream_sha=%s\nlast_activity=%s\n' \
+              "$upstream_sha" \
+              "$now_iso" > .upstream-state
+
             echo "needed=true" >> "$GITHUB_OUTPUT"
           else
             echo "needed=false" >> "$GITHUB_OUTPUT"
@@ -124,8 +159,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add .upstream-state
           git commit -m "chore: keep upstream sync active"
           git push origin HEAD:main
@@ -138,6 +175,7 @@ jobs:
           set -euo pipefail
 
           upstream_sha="${{ steps.prepare.outputs.upstream_sha }}"
+
           echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
           echo "upstream_short=${upstream_sha:0:12}" >> "$GITHUB_OUTPUT"
           echo "fork_short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
@@ -171,10 +209,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE_NAME }}
+
           tags: |
             type=raw,value=latest
             type=raw,value=upstream-${{ steps.image_vars.outputs.upstream_short }},enable=${{ steps.prepare.outputs.upstream_changed == 'true' }}
             type=raw,value=fork-${{ steps.image_vars.outputs.fork_short }},enable=${{ steps.prepare.outputs.upstream_changed != 'true' }}
+
           labels: |
             org.opencontainers.image.source=https://github.com/Rogerma12345/zhihu_web
             org.opencontainers.image.revision=${{ steps.image_vars.outputs.revision }}
@@ -188,10 +228,18 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+
           push: true
-          platforms: linux/amd64,linux/arm64
+
+          platforms: |
+            linux/amd64
+            linux/arm64
+
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Record successful upstream publication
         if: success() && steps.prepare.outputs.upstream_changed == 'true'
@@ -201,16 +249,39 @@ jobs:
 
           upstream_sha="${{ steps.prepare.outputs.upstream_sha }}"
           now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          printf 'upstream_sha=%s\nlast_activity=%s\n' "$upstream_sha" "$now_iso" > .upstream-state
 
-          if ! git diff --quiet -- Dockerfile .dockerignore deploy SELFHOST.md .github/workflows; then
-            echo "Refusing to commit automatic fork-overlay changes" >&2
-            git diff -- Dockerfile .dockerignore deploy SELFHOST.md .github/workflows >&2
+          printf 'upstream_sha=%s\nlast_activity=%s\n' \
+            "$upstream_sha" \
+            "$now_iso" > .upstream-state
+
+          if ! git diff --quiet -- \
+            Dockerfile \
+            .dockerignore \
+            deploy \
+            SELFHOST.md \
+            .github/workflows \
+            src/components/FeedCard.vue \
+            src/components/home/HotListCard.vue \
+            src/style.css
+          then
+            echo "Refusing to commit automatic fork-managed changes" >&2
+
+            git diff -- \
+              Dockerfile \
+              .dockerignore \
+              deploy \
+              SELFHOST.md \
+              .github/workflows \
+              src/components/FeedCard.vue \
+              src/components/home/HotListCard.vue \
+              src/style.css >&2
+
             exit 1
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add -A
           git commit -m "chore: sync upstream ${upstream_sha:0:12}"
           git push origin HEAD:main
