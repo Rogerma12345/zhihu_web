@@ -1,109 +1,51 @@
-# ZhiHu_Web
+# zhihu_web 分支
 
-> 在线网页端：https://zhihulite.github.io/zhihu_web/
 
-基于 **Framework7** + **GM_xmlhttpRequest** 实现的第三方知乎网页端。
 
-> **项目状态**：目前为 Demo 阶段，欢迎有兴趣的开发者参与共建！
+## 文件结构
 
-[点击查看参与方式及后续计划](https://github.com/zhihulite/zhihu_web/blob/main/join.md)
+`src/style.css` 是完整替换文件，只保留全局布局和项目级主题变量。
 
----
+`src/utils/paged-scroll.js` 是统一的动态无限滚动和下拉刷新初始化器，并处理首屏内容不足滚动高度时的续页触发。
 
-## 使用修改版 Framework7
+`src/api/http.js` 是完整替换文件，统一分页对象、保留响应附加字段并兼容现有 DELETE 调用形式。
 
-本项目使用**修改版 Framework7**（修复了原版已知但官方尚未修复的 bug）
+`deploy/apply-fork-patches.py` 根据当前 main 源码结构修改其余组件，并对缺失的预期结构中止处理，避免静默产生半成品修改。
 
-- 修改版仓库地址：https://github.com/huajiqaq/framework7/tree/mymaster
+`deploy/verify-project-fixes.py` 检查已确认问题是否仍残留，并检查浅色专用中性色是否仍存在于组件样式中。
 
----
+`deploy/sync-upstream.sh` 在同步上游源码后重新应用本包修复并执行校验，不再通过长期排除业务源码文件维持 fork 修改。
 
-## 替换 Framework7 依赖教程
+`deploy/fork-templates` 保存同步时需要恢复的完整 fork 基础文件。
 
-### 步骤 1：安装 ZhiHu_Web 项目
+`manifest.json` 记录修复范围和目标文件。
 
-```bash
-git clone https://github.com/zhihulite/zhihu_web.git
-cd zhihu_web
-npm install
-```
+## 修改问题
 
-> 为了方便，先安装官方模块，后续再进行替换。
+统一滚动处理覆盖动态创建的 `.infinite-scroll-content` 与 `.ptr-content`，避免页面初始化完成后才出现的滚动区域没有 Framework7 监听器。统一处理首批内容不足一屏时不会自然产生滚动事件的问题。
 
-### 步骤 2：删除 Vite 缓存
+分页包装统一把缺少 `paging.next` 的响应视为结束，并保留 `more_tabs` 等分页对象之外的字段。分页 `data` 改为可重复读取，避免组件二次读取时抛错。DELETE 包装兼容项目已有的二参数和三参数调用形式。
 
-```bash
-rm -rf node_modules/.vite
-```
+搜索页修复跨标签读取错误的 `hasMore`、反向结束判断、反向结束提示、下一页空结果和 `www.zhihu.com` 请求模式。搜索结果页修复未声明变量和分页状态。
 
-### 步骤 3：下载并构建修改版 Framework7
+关注页修复关注问题接口路径、用户条目类型、关注状态字段、空用户标识请求、下一页空结果和加载指示状态。全局卡片跳转增加用户、成员、想法和视频类型归一化，避免用户条目进入文章路由。
 
-```bash
-git clone https://github.com/huajiqaq/framework7.git
-cd framework7
-git checkout mymaster
-npm install
-```
+用户主页修复关注状态、性别字段、资料和标签并发竞态、头像空值访问、重复对象键、内容类型归一化、下一页空结果和分页状态。
 
-### 步骤 4：构建 Core 和 Vue 包
+话题页修复未声明 `metrics`、内容类型归一化、分页状态和加载指示状态。统一滚动管理器接管异步出现的标签页滚动初始化。
 
-```bash
-npm run build-core:prod   # 构建 Core 包
-npm run build-vue:prod    # 构建 Vue 包
-```
+收藏弹层修复加载状态导致的递归分页失效，改为受下一页地址和重复地址约束的迭代加载。收藏列表和收藏详情统一处理空下一页、分页状态和加载指示状态。
 
-构建完成后，在根目录找到 `packages` 目录。
+通知页为 `www.zhihu.com` 请求补充正确请求模式，修复已读请求模式、空下一页、分页状态和加载指示状态。
 
-### 步骤 5：替换项目依赖
+人员列表、更多列表、专栏列表和评论分页统一处理结束条件。人员更多页修复关注问题接口路径。问题详情页加载指示器只在真实加载过程中显示。
 
-- 将 `packages/core` 文件夹替换到 `zhihu_web/node_modules/framework7`
-- 将 `packages/vue` 文件夹替换到 `zhihu_web/node_modules/framework7-vue`
+登录数据初始化修复 cookie 对象创建顺序和空 access token 生成无效 Bearer 值的问题。
 
-### 步骤 6：重新构建并运行
+文章详情增加想法类型兼容，并对作者头像、互动统计和回答所属问题使用空值安全访问。
 
-```bash
-cd ../zhihu_web
-npm run build   # 构造静态资源（生成 dist 目录）
-npm run dev -- --host     # 启动开发服务器（支持局域网访问）
-```
+深色主题清理不再使用数百行全局选择器覆盖组件。`src/style.css` 仅保存少量语义变量，应用脚本把组件内浅色专用中性色替换为 Framework7 或项目主题变量。强调色、白色前景文字、视频黑色画布、代码块深色背景和截图导出背景不会被批量替换。
 
-> **两步是独立的**：`npm run build` 用于生产部署，`npm run dev` 用于日常开发调试。开发时只需执行 `npm run dev -- --host`，无需先 build。
+HomeView 中此前为单页故障加入的滚动初始化和视口补页辅助代码会被移除，滚动生命周期由统一管理器处理；已修复的业务分页逻辑保留。
 
----
-
-## 更新项目依赖
-
-当需要升级项目依赖到最新版本时，推荐使用 `npm-check-updates`（ncu）工具：
-
-### 安装 ncu
-
-```bash
-npm install -g npm-check-updates
-```
-
-### 检查可更新的依赖
-
-```bash
-ncu
-```
-
-### 交互式选择更新
-
-```bash
-ncu -i
-```
-
-### 直接更新 package.json 到最新版本
-
-```bash
-ncu -u
-npm install
-```
-
-> **注意**：更新依赖后，如果涉及 Framework7 相关包，需要重新执行上述替换教程，确保使用修改版。
-
----
-
-## 验证替换成功
-
-启动项目后，检查控制台无模块加载错误即可。
+上游同步不再排除 FeedCard、HotListCard、HomeView、TopicDetail、style.css 等业务源码。同步完成后会在最新上游源码上重新应用修复并运行校验，降低长期 fork 文件与上游分离的范围。

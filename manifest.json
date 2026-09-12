@@ -1,0 +1,61 @@
+{
+  "name": "zhihu_web_cleanup_complete_20260912",
+  "supersedes_previous_packages": true,
+  "remote_repository": "https://github.com/Rogerma12345/zhihu_web",
+  "target_branch": "main",
+  "generated_date": "2026-09-12",
+  "new_code_comments_added": false,
+  "style_css_lines": 73,
+  "full_replacements": [
+    "src/style.css",
+    "src/api/http.js",
+    "src/utils/paged-scroll.js",
+    "deploy/sync-upstream.sh"
+  ],
+  "targeted_source_edits": [
+    "src/App.vue",
+    "src/main.js",
+    "src/api/utils/zhihu-module.js",
+    "src/components/ArticleDetail.vue",
+    "src/components/SearchPage.vue",
+    "src/components/SearchResultView.vue",
+    "src/components/TopicDetail.vue",
+    "src/components/CollectionSheet.vue",
+    "src/components/QuestionDetail.vue",
+    "src/components/UserProfile.vue",
+    "src/components/home/FollowingView.vue",
+    "src/components/home/CollectionsView.vue",
+    "src/components/CollectionDetail.vue",
+    "src/components/NotificationsView.vue",
+    "src/components/PeopleListView.vue",
+    "src/components/PeopleMoreView.vue",
+    "src/components/ColumnItemsView.vue",
+    "src/components/CommentsSheet.vue",
+    "src/components/home/HomeView.vue",
+    ".github/workflows/sync-ghcr.yml",
+    "src/**/*.vue",
+    "src/**/*.css"
+  ],
+  "issue_groups": [
+    "dynamic infinite scroll and pull-to-refresh lifecycle",
+    "viewport underfill pagination",
+    "pagination next and is_end consistency",
+    "pagination response metadata preservation",
+    "following user route type normalization",
+    "following questions endpoint path",
+    "search pagination and state errors",
+    "user profile race and missing fields",
+    "topic metrics declaration and pagination",
+    "collection sheet recursive pagination",
+    "notification www request mode",
+    "login cookie initialization",
+    "dark theme local neutral colors",
+    "upstream sync patch reapplication"
+  ],
+  "validation": [
+    "python compile",
+    "bash -n",
+    "node --check"
+  ],
+  "full_repository_build_executed": false
+}
