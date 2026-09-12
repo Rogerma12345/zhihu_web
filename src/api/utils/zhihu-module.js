@@ -1,6 +1,7 @@
 import unifiedFetch from './request.js';
 import { tokenManager, tryRefreshToken } from '../auth.js';
 import { ensureGuestCredential } from './guest-request.js';
+import { signWebRequest } from './zse96-web.js';
 
 const appVersion = "10.12.0"
 const apiVersion = "101_1_1.0"
@@ -11,9 +12,25 @@ const appBundle = "com.zhihu.android"
 function getMsid() {
     return localStorage.getItem('zhihu_msid') || 'DUzQXhjAQDuNnnrXUZuXcZAHclw7VipDNE79RFV6UVhoakFRRHVObm5yWFVadVhjWkFIY2x3N1ZpcERORTc5c2h1';
 }
-
 function getUdid() {
     return localStorage.getItem('zhihu_udid') || 'DUzQXhjAQDuNnnrXUZuXcZAHclw7VipDNE79RFV6UVhoakFRRHVObm5yWFVadVhjWkFIY2x3N1ZpcERORTc5c2h1';
+}
+
+function normalizeZhihuUrl(url) {
+    if (typeof url !== 'string') return url;
+    return url
+        .replace(/^http:\/\/api\.zhihu\.com(?=\/|$)/i, 'https://api.zhihu.com')
+        .replace(/^http:\/\/www\.zhihu\.com(?=\/|$)/i, 'https://www.zhihu.com');
+}
+
+function getCookieValue(cookieString, name) {
+    if (!cookieString) return '';
+    const prefix = `${name}=`;
+    const entry = cookieString
+        .split(';')
+        .map(item => item.trim())
+        .find(item => item.startsWith(prefix));
+    return entry ? entry.slice(prefix.length) : '';
 }
 
 class ZhihuRequest {
@@ -23,7 +40,6 @@ class ZhihuRequest {
         }
 
         this.encryptData = encryptData.bind(this);
-
         const x_app_za = `OS=Android&Release=15&Model=Pixel&VersionName=10.12.0&VersionCode=${appBuild}&Product=com.zhihu.android&Installer=Google+Play&DeviceType=AndroidPhone`;
         this.appSpecificHeaders = {
             "x-api-version": "3.0.93",
@@ -33,32 +49,32 @@ class ZhihuRequest {
             "x-app-flavor": "play",
             "x-app-build": "release",
         };
-
         this.updateLoginData(loginData, zsts, defaultHeaders)
-
     }
 
     updateLoginData(loginData, zsts = {}, defaultHeaders = {}) {
-        console.log('UpdateLoginData:', loginData);
-
-        loginData = loginData.guest || loginData;
+        loginData = loginData?.guest || loginData || {};
         this.accessToken = loginData.access_token ? `Bearer ${loginData.access_token}` : "";
+
         const cookieData = { ...(loginData.cookie || {}) };
-        if (loginData.udid) {
-            cookieData.d_c0 = loginData.udid;
+        if (!cookieData.d_c0 && loginData.d_c0) {
+            cookieData.d_c0 = loginData.d_c0;
         }
+        this.cookieData = cookieData;
         this.cookie = Object.entries(cookieData)
-            .filter(([_, v]) => v)
-            .map(([k, v]) => `${k}=${v}`)
+            .filter(([_, value]) => value)
+            .map(([key, value]) => `${key}=${value}`)
             .join('; ');
 
+        this.zst81 = undefined;
+        this.zst82 = undefined;
         if (Array.isArray(zsts) && zsts.length > 0) {
             const [zst82, zst81] = zsts;
             this.zst81 = zst81;
             this.zst82 = zst82;
         }
 
-        const user_agent = `${appBundle}/Futureve/${appVersion} Mozilla/5.0 (Linux; Android; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/57.0.1000.10 Mobile Safari/537.36`
+        const user_agent = `${appBundle}/Futureve/${appVersion} Mozilla/5.0 (Linux; Android; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/57.0.1000.10 Mobile Safari/537.36`;
         this.commonDefaultHeaders = {
             "User-Agent": user_agent,
             "x-Zse-93": apiVersion,
@@ -70,21 +86,42 @@ class ZhihuRequest {
             ...(this.zst82 && { "X-ZST-82": this.zst82 }),
             ...defaultHeaders,
         };
-
         this.defaultHeaders = {
             ...this.commonDefaultHeaders,
             ...this.appSpecificHeaders
         };
 
+        const browserUserAgent = typeof navigator !== 'undefined'
+            ? navigator.userAgent
+            : 'Mozilla/5.0';
+        this.webDefaultHeaders = {
+            "Accept": "application/json, text/plain, */*",
+            "User-Agent": browserUserAgent,
+            "Referer": "https://www.zhihu.com/",
+            ...(this.cookie && { "Cookie": this.cookie }),
+            ...defaultHeaders,
+        };
+
         console.log('Login data updated');
     }
 
-    async request(method, url, data = "", { headers = {}, encryptBody = true, isWWW = false, encryptHead = false } = {}) {
+    async request(method, url, data = "", {
+        headers = {},
+        encryptBody = true,
+        isWWW = false,
+        encryptHead = false,
+        requireWebSignature = false,
+        requestMode = null,
+    } = {}) {
         method = method.toUpperCase();
         const isGet = method === 'GET';
+        url = normalizeZhihuUrl(url);
 
+        const isWebRequest = requestMode === 'web';
         let baseDefaultHeaders = this.defaultHeaders;
-        if (isWWW) {
+        if (isWebRequest) {
+            baseDefaultHeaders = this.webDefaultHeaders;
+        } else if (isWWW) {
             baseDefaultHeaders = this.commonDefaultHeaders;
         }
 
@@ -94,77 +131,94 @@ class ZhihuRequest {
         let finalCookie = "";
         if (instanceCookie || incomingCookie) {
             const cookieMap = {};
-
             if (instanceCookie) {
-                instanceCookie.split('; ').forEach(cookie => {
-                    const [name, ...valueParts] = cookie.split('=');
+                instanceCookie.split(';').forEach(cookie => {
+                    const [name, ...valueParts] = cookie.trim().split('=');
                     if (name) {
-                        cookieMap[name.trim()] = valueParts.join('=');
+                        cookieMap[name] = valueParts.join('=');
                     }
                 });
             }
-
             if (incomingCookie) {
-                incomingCookie.split('; ').forEach(cookie => {
-                    const [name, ...valueParts] = cookie.split('=');
+                incomingCookie.split(';').forEach(cookie => {
+                    const [name, ...valueParts] = cookie.trim().split('=');
                     if (name) {
-                        cookieMap[name.trim()] = valueParts.join('=');
+                        cookieMap[name] = valueParts.join('=');
                     }
                 });
             }
 
             finalCookie = Object.entries(cookieMap)
+                .filter(([_, value]) => value)
                 .map(([name, value]) => `${name}=${value}`)
                 .join('; ');
         }
 
+        let body = null;
+        if (!isGet && data) {
+            body = isWebRequest
+                ? data
+                : (encryptBody ? this.encryptData(data, false) : data);
+        }
 
         const requestHeaders = {
             ...baseDefaultHeaders,
             ...headers,
-            ...((isGet || encryptHead || !data) && {
-                "x-Zse-96": `1.0_${this.encryptData(url)}`,
-            }),
         };
         delete requestHeaders.Cookie;
         delete requestHeaders.cookie;
-        requestHeaders.Cookie = finalCookie
-
-        let body = null;
-        if (!isGet && data) {
-            body = encryptBody ? this.encryptData(data, false) : data;
-            if (!requestHeaders["Content-Type"]) requestHeaders["Content-Type"] = "application/x-www-form-urlencoded";
+        if (finalCookie) {
+            requestHeaders.Cookie = finalCookie;
         }
 
-        try {
-            const fetchOptions = {
-                headers: requestHeaders,
-            };
+        if (isWebRequest) {
+            delete requestHeaders.Authorization;
+            delete requestHeaders.authorization;
+            delete requestHeaders['x-ms-id'];
+            delete requestHeaders['x-udid'];
+            delete requestHeaders['X-ZST-81'];
+            delete requestHeaders['X-ZST-82'];
+            delete requestHeaders['x-Zse-93'];
+            delete requestHeaders['x-Zse-96'];
+            delete requestHeaders['x-zse-93'];
+            delete requestHeaders['x-zse-96'];
 
-            let responseData;
-            switch (method) {
-                case 'GET':
-                    responseData = await unifiedFetch.get(url, fetchOptions);
-                    break;
-                case 'POST':
-                    responseData = await unifiedFetch.post(url, body, fetchOptions);
-                    break;
-                case 'PUT':
-                    responseData = await unifiedFetch.put(url, body, fetchOptions);
-                    break;
-                case 'PATCH':
-                    responseData = await unifiedFetch.patch(url, body, fetchOptions);
-                    break;
-                case 'DELETE':
-                    responseData = await unifiedFetch.delete(url, fetchOptions);
-                    break;
-                default:
-                    throw new Error(`Unsupported method: ${method}`);
+            const dC0 = getCookieValue(finalCookie, 'd_c0');
+            if (dC0) {
+                const signature = signWebRequest(url, dC0, isGet ? null : body);
+                requestHeaders['x-zse-93'] = signature.zse93;
+                requestHeaders['x-zse-96'] = signature.zse96;
+                requestHeaders['x-requested-with'] = 'fetch';
+            } else if (requireWebSignature) {
+                throw new Error('Web 请求缺少有效 d_c0，无法发送需要签名的请求');
             }
+        } else if (isGet || encryptHead || !data) {
+            requestHeaders["x-Zse-96"] = `1.0_${this.encryptData(url)}`;
+        }
 
-            return responseData;
-        } catch (error) {
-            throw error;
+        if (!isGet && data && !requestHeaders["Content-Type"]) {
+            requestHeaders["Content-Type"] = isWebRequest
+                ? "application/json"
+                : "application/x-www-form-urlencoded";
+        }
+
+        const fetchOptions = {
+            headers: requestHeaders,
+        };
+
+        switch (method) {
+            case 'GET':
+                return unifiedFetch.get(url, fetchOptions);
+            case 'POST':
+                return unifiedFetch.post(url, body, fetchOptions);
+            case 'PUT':
+                return unifiedFetch.put(url, body, fetchOptions);
+            case 'PATCH':
+                return unifiedFetch.patch(url, body, fetchOptions);
+            case 'DELETE':
+                return unifiedFetch.delete(url, fetchOptions);
+            default:
+                throw new Error(`Unsupported method: ${method}`);
         }
     }
 
@@ -176,7 +230,6 @@ class ZhihuRequest {
 }
 
 let globalZhihuInstance = null;
-
 import { getLAESInstance } from './laes_utils.js'
 import CryptoJS from 'crypto-js';
 const laes_utils = getLAESInstance();
@@ -186,16 +239,11 @@ export async function initZhihu() {
         if (typeof data !== 'string') {
             throw new Error('data must be a string');
         }
-
-        // 暂时不想支持www
         if (data.startsWith("https://www.zhihu.com") || data.startsWith("http://www.zhihu.com")) return data;
         if (data.startsWith("https://lens.zhihu.com") || data.startsWith("http://lens.zhihu.com")) return data;
-
         if (isGetRequest) {
             const apiPrefix = 'https://api.zhihu.com';
-            if (data.startsWith("http://api.zhihu.com")) {
-                data = data.replace("http://", "https://");
-            }
+            data = normalizeZhihuUrl(data);
             if (!data.startsWith(apiPrefix)) {
                 throw new Error(`URL must start with ${apiPrefix}`);
             }
@@ -203,7 +251,6 @@ export async function initZhihu() {
             data = `${apiVersion}+${apiPath}+${appVersion}+${this.accessToken}+${getUdid()}`
             data = CryptoJS.MD5(CryptoJS.enc.Utf8.parse(data)).toString(CryptoJS.enc.Hex);
         }
-
         return LAESEncrypt(data);
     }
 
@@ -219,7 +266,6 @@ export async function initZhihu() {
     if (!loginData) {
         loginData = await ensureGuestCredential();
     }
-
     zsts = JSON.parse(localStorage.getItem('zhihu_zsts'));
     globalZhihuInstance = new ZhihuRequest({
         encryptData: encrypt_data,
@@ -227,11 +273,9 @@ export async function initZhihu() {
         zsts: zsts
     });
 
-
     console.log('ZhihuRequest 已初始化');
     return globalZhihuInstance;
 }
-
 export function updateZhihuLoginData(loginData, zsts, defaultHeaders) {
     if (!globalZhihuInstance) {
         console.warn('ZhihuRequest 尚未初始化，请先调用 initZhihu');

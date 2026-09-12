@@ -16,7 +16,6 @@ fail() {
   fi
   exit 1
 }
-
 emit_output() {
   local key="$1"
   local value="$2"
@@ -33,7 +32,6 @@ read_state_value() {
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "not inside a Git work tree"
 cd "$repo_root"
-
 [[ -f "$STATE_FILE" ]] || fail "$STATE_FILE is missing"
 command -v rsync >/dev/null 2>&1 || fail "rsync is required"
 command -v tar >/dev/null 2>&1 || fail "tar is required"
@@ -42,7 +40,6 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 state_sha="$(read_state_value upstream_sha)"
 [[ "$state_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "invalid upstream_sha in $STATE_FILE"
 state_sha="${state_sha,,}"
-
 git fetch --no-tags --depth=1 "$UPSTREAM_URL" "refs/heads/${UPSTREAM_BRANCH}"
 upstream_sha="$(git rev-parse FETCH_HEAD)"
 [[ "$upstream_sha" =~ ^[0-9a-f]{40}$ ]] || fail "could not resolve upstream HEAD SHA"
@@ -50,6 +47,7 @@ emit_output upstream_sha "$upstream_sha"
 
 if [[ "$upstream_sha" == "$state_sha" ]]; then
   python3 deploy/verify-project-fixes.py "$repo_root"
+  python3 deploy/verify-network-request-fix.py "$repo_root"
   emit_output upstream_changed false
   exit 0
 fi
@@ -74,7 +72,6 @@ for path in "${overlay_paths[@]}"; do
     conflicts+=("$path")
   fi
 done
-
 if ((${#conflicts[@]} > 0)); then
   printf '[sync-upstream] ERROR: upstream now contains fork overlay path(s):\n' >&2
   for path in "${conflicts[@]}"; do
@@ -84,7 +81,8 @@ if ((${#conflicts[@]} > 0)); then
 fi
 
 rsync   --archive   --delete   "--exclude=/.git/"   "--exclude=/.github/workflows/"   "--exclude=/Dockerfile"   "--exclude=/.dockerignore"   "--exclude=/deploy/"   "--exclude=/.upstream-state"   "--exclude=/SELFHOST.md"   "$snapshot_dir/"   "$repo_root/"
-
 python3 deploy/apply-fork-patches.py "$repo_root"
+python3 deploy/apply-network-request-fix.py "$repo_root"
 python3 deploy/verify-project-fixes.py "$repo_root"
+python3 deploy/verify-network-request-fix.py "$repo_root"
 emit_output upstream_changed true
