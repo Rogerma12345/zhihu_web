@@ -1,0 +1,6 @@
+**
+!Dockerfile
+!html/
+!html/**
+!deploy/
+!deploy/**
