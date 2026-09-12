@@ -2,8 +2,8 @@
 const props = defineProps({
     item: Object,
 })
-defineEmits(['click'])
 
+defineEmits(['click'])
 </script>
 
 <template>
@@ -12,13 +12,20 @@ defineEmits(['click'])
             <div v-if="item.image" class="card-image-wrap">
                 <img :src="item.image" class="content-img" />
             </div>
+
             <div class="title" v-html="item.title"></div>
 
             <div v-if="item.bottomText" class="bottom-text-line">
                 {{ item.bottomText }}
             </div>
+
             <div v-else class="author-excerpt-line">
-                <span class="author-label" v-if="!item.noAuthorPrefix">{{ item.authorName || '匿名用户' }}：</span>
+                <span
+                    v-if="!item.noAuthorPrefix"
+                    class="author-label"
+                >
+                    {{ item.authorName || '匿名用户' }}：
+                </span>
                 <span class="excerpt-text" v-html="item.excerpt"></span>
             </div>
         </f7-card-content>
@@ -27,13 +34,23 @@ defineEmits(['click'])
             <div v-if="item.footer" class="card-footer-text">
                 {{ item.footer }}
             </div>
+
             <div v-else class="card-footer-metrics">
                 <span class="metric-item">
-                    <f7-icon ios="f7:hand_thumbsup" md="material:thumb_up" size="14" />
+                    <f7-icon
+                        ios="f7:hand_thumbsup"
+                        md="material:thumb_up"
+                        size="14"
+                    />
                     {{ item.metrics?.likes || 0 }}
                 </span>
+
                 <span class="metric-item">
-                    <f7-icon ios="f7:bubble_left" md="material:chat_bubble" size="14" />
+                    <f7-icon
+                        ios="f7:bubble_left"
+                        md="material:chat_bubble"
+                        size="14"
+                    />
                     {{ item.metrics?.comments || 0 }}
                 </span>
             </div>
@@ -79,13 +96,12 @@ defineEmits(['click'])
     font-size: 17px;
     font-weight: 700;
     margin-bottom: 8px;
-    color: #1a1a1a;
+    color: var(--f7-text-color);
 }
 
 .author-excerpt-line,
 .bottom-text-line {
     font-size: 14px;
-    color: #444;
     line-height: 1.5;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -94,8 +110,16 @@ defineEmits(['click'])
     overflow: hidden;
 }
 
+.author-excerpt-line {
+    color: var(--f7-text-color);
+    opacity: 0.76;
+}
+
 .bottom-text-line {
-    color: #888;
+    color: var(
+        --f7-card-footer-text-color,
+        var(--f7-text-color)
+    );
 }
 
 .title :deep(p),
@@ -113,14 +137,24 @@ defineEmits(['click'])
 
 .author-label {
     font-weight: 500;
-    color: #666;
+    color: inherit;
+}
+
+.card-footer-text {
+    color: var(
+        --f7-card-footer-text-color,
+        var(--f7-text-color)
+    );
 }
 
 .card-footer-metrics {
     display: flex;
     gap: 16px;
     font-size: 12px;
-    color: #999;
+    color: var(
+        --f7-card-footer-text-color,
+        var(--f7-text-color)
+    );
 }
 
 .metric-item {

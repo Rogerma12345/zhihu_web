@@ -3,9 +3,7 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  color-scheme: light;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -13,16 +11,19 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+.dark {
+  color-scheme: dark;
+}
+
 html,
 body {
   height: 100%;
   overflow: hidden;
   margin: 0;
-  /**禁用字体缩放**/
+
   -webkit-text-size-adjust: none;
 }
 
-/**隐藏未加载的组件**/
 :not(:defined) {
   display: none;
 }
@@ -47,4 +48,15 @@ body {
 
 .tabs-auto-page-content .tab .page-content {
   padding-top: 0 !important;
+}
+
+
+.hot-list {
+  background: var(--f7-page-bg-color) !important;
+  --f7-list-bg-color: var(--f7-page-bg-color);
+}
+
+
+.recommend-section-tabs {
+  --f7-toolbar-bg-color: var(--f7-bars-bg-color);
 }
