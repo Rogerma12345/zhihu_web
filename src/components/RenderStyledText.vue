@@ -243,7 +243,7 @@ const parts = computed(() => {
 :global(.dark) .styled-formula-image,
 :global(html.dark) .styled-formula-image {
   filter: invert(1) hue-rotate(180deg);
-  mix-blend-mode: screen;
+  mix-blend-mode: difference;
 }
 
 .styled-formula-block {

@@ -45,14 +45,10 @@ if article:
         body = block.group(1)
         if 'position: relative' not in body:
             errors.append('ArticleDetail.vue: bottom action bar is not in document flow')
-        if 'var(--f7-bars-bg-color' not in body:
-            errors.append('ArticleDetail.vue: bottom action bar is not using Framework7 bar theme variables')
-        if 'var(--f7-bars-text-color' not in body:
-            errors.append('ArticleDetail.vue: bottom action bar text is not theme-aware')
+        if 'pointer-events: none' not in body:
+            errors.append('ArticleDetail.vue: bottom action row container should not swallow page clicks')
         if re.search(r'position\s*:\s*absolute', body):
             errors.append('ArticleDetail.vue: absolute bottom action bar remains')
-        if 'backdrop-filter' not in body:
-            errors.append('ArticleDetail.vue: action bar background treatment missing')
 
 search_result = require_file('src/components/SearchResultView.vue')
 if search_result:
@@ -73,7 +69,7 @@ for rel in ['src/components/FeedCard.vue', 'src/components/UserProfile.vue']:
 search_files = []
 for path in (ROOT / 'src' / 'components').glob('*.vue'):
     text = path.read_text(encoding='utf-8')
-    if '__handleSearchbarEnter' in text and '@keydown.enter=' in text:
+    if ('handleSearchbarKeydown' in text and '@keydown="handleSearchbarKeydown"' in text) or ('__handleSearchbarEnter' in text and '@keydown.enter=' in text):
         search_files.append(path)
 if not search_files:
     errors.append('search page: Enter submission handler missing')
@@ -97,6 +93,91 @@ for template in [
     if not (ROOT / 'deploy' / 'fork-templates' / 'article-display' / template).exists():
         errors.append(f'missing article display template: {template}')
 
+
+# BEGIN article display v2 verification integrated
+def _v2_get(rel: str) -> str:
+    path = ROOT / rel
+    if not path.exists():
+        errors.append(f'missing file: {rel}')
+        return ''
+    return path.read_text(encoding='utf-8')
+
+def _verify_v2() -> None:
+    search = _v2_get('src/components/SearchPage.vue')
+    if search:
+        if 'const handleSearchbarKeydown = (event) =>' not in search:
+            errors.append('SearchPage.vue: direct Enter handler missing')
+        if '@keydown="handleSearchbarKeydown"' not in search:
+            errors.append('SearchPage.vue: searchbar keydown binding missing')
+        if '@submit.prevent="handleSearch()"' not in search:
+            errors.append('SearchPage.vue: searchbar submit fallback missing')
+        if '__handleSearchbarEnter' in search:
+            errors.append('SearchPage.vue: obsolete v1 Enter wrapper still present')
+    for rel in ['src/components/FeedCard.vue', 'src/components/UserProfile.vue']:
+        text = _v2_get(rel)
+        if text:
+            if 'v-html=' in text:
+                errors.append(f'{rel}: untrusted list v-html remains')
+            if 'htmlToPlainText' not in text:
+                errors.append(f'{rel}: htmlToPlainText not wired')
+    article = _v2_get('src/components/ArticleDetail.vue')
+    if article:
+        if "import EnhancedContentRenderer from './EnhancedContentRenderer.vue';" not in article:
+            errors.append('ArticleDetail.vue: EnhancedContentRenderer import missing')
+        if '<EnhancedContentRenderer' not in article or 'item.structured_content' not in article:
+            errors.append('ArticleDetail.vue: enhanced renderer not used for article body')
+        bottom = re.search('\\.bottom-float-container\\s*\\{(.*?)\\}', article, re.S)
+        if not bottom:
+            errors.append('ArticleDetail.vue: bottom-float-container style missing')
+        else:
+            body = bottom.group(1)
+            if 'position: relative' not in body:
+                errors.append('ArticleDetail.vue: action row not in normal layout flow')
+            if re.search('position\\s*:\\s*absolute', body):
+                errors.append('ArticleDetail.vue: absolute action row remains')
+            if re.search('background\\s*:', body):
+                errors.append('ArticleDetail.vue: outer action container should not paint a theme background')
+        if 'background: rgba(255, 255, 255, 0.9)' in article:
+            errors.append('ArticleDetail.vue: hard-coded light glass background remains')
+        if '--f7-bg-color-rgb' in article:
+            errors.append('ArticleDetail.vue: fragile --f7-bg-color-rgb action-bar fallback remains')
+    renderer = _v2_get('src/components/EnhancedContentRenderer.vue')
+    if renderer:
+        if "defineEmits(['imageClick'])" not in renderer:
+            errors.append('EnhancedContentRenderer.vue: imageClick emit missing')
+        if '@imageClick="emit(\'imageClick\', $event)"' not in renderer:
+            errors.append('EnhancedContentRenderer.vue: legacy imageClick is not forwarded')
+    content = _v2_get('src/components/ContentRenderer.vue')
+    if content:
+        if 'htmlToPlainText(segment.card.title' not in content:
+            errors.append('ContentRenderer.vue: link-card title sanitizer missing')
+        if 'htmlToPlainText(extra.desc' not in content:
+            errors.append('ContentRenderer.vue: link-card description sanitizer missing')
+        if "backgroundColor: '#f5f5f5'" in content:
+            errors.append('ContentRenderer.vue: hard-coded light image placeholder remains')
+    reference = _v2_get('src/components/ReferenceBlockRenderer.vue')
+    if reference:
+        if "return htmlToPlainText(item?.text || '');" not in reference:
+            errors.append('ReferenceBlockRenderer.vue: reference visible text sanitizer missing')
+        if ':text="item?.text || \'\'"' in reference:
+            errors.append('ReferenceBlockRenderer.vue: raw reference HTML still reaches styled text renderer')
+    styled = _v2_get('src/components/RenderStyledText.vue')
+    if styled:
+        if 'mix-blend-mode: screen' in styled:
+            errors.append('RenderStyledText.vue: formula screen blending remains')
+        if 'mix-blend-mode: difference' not in styled:
+            errors.append('RenderStyledText.vue: adaptive formula blending missing')
+    for rel in ['src/components/CodeBlockRenderer.vue', 'src/components/ReferenceBlockRenderer.vue', 'src/components/UnknownSegmentRenderer.vue']:
+        text = _v2_get(rel)
+        if text and ('var(--f7-page-bg-color, #fff)' in text or 'var(--f7-text-color, #111)' in text):
+            errors.append(f'{rel}: hard-coded light theme fallbacks remain')
+
+    permanent_apply = require_file('deploy/apply-article-display-fix.py')
+    if '# BEGIN article display v2 integrated' not in permanent_apply or '_v2_patch_search_page()' not in permanent_apply:
+        errors.append('deploy/apply-article-display-fix.py: integrated v2 apply pass missing')
+# END article display v2 verification integrated
+
+_verify_v2()
 if errors:
     print('article display fix verification failed:', file=sys.stderr)
     for error in errors:

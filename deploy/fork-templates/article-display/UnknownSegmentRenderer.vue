@@ -65,9 +65,9 @@ const fallback = computed(() => {
 .unknown-placeholder {
   display: inline-block;
   padding: 0.45em 0.65em;
-  border: 1px dashed color-mix(in srgb, var(--f7-text-color, #111) 24%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--f7-text-color, CanvasText) 24%, transparent);
   border-radius: 6px;
-  color: color-mix(in srgb, var(--f7-text-color, #111) 58%, transparent);
+  color: color-mix(in srgb, var(--f7-text-color, CanvasText) 58%, transparent);
   font-size: 0.86em;
 }
 

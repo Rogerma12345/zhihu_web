@@ -26,6 +26,8 @@
       <ContentRenderer
         v-else-if="isLegacySupported(segment?.type)"
         :segments="[segment]"
+
+        @imageClick="emit('imageClick', $event)"
       />
 
       <UnknownSegmentRenderer
@@ -43,6 +45,8 @@ import RenderStyledText from './RenderStyledText.vue';
 import CodeBlockRenderer from './CodeBlockRenderer.vue';
 import ReferenceBlockRenderer from './ReferenceBlockRenderer.vue';
 import UnknownSegmentRenderer from './UnknownSegmentRenderer.vue';
+
+const emit = defineEmits(['imageClick']);
 
 const props = defineProps({
   segments: {

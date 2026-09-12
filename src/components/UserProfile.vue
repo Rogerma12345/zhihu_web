@@ -1,4 +1,5 @@
 <script setup>
+import { htmlToPlainText } from '../utils/content-text.js';
 import { ref, onMounted, watch, reactive, nextTick } from 'vue';
 import TabLayout from './TabLayout.vue';
 import $http from '../api/http.js';
@@ -321,8 +322,8 @@ const fetchContent = async (tabId, isRefresh = false) => {
                 }
 
                 return {
-                    title,
-                    excerpt,
+                    title: htmlToPlainText(title),
+                    excerpt: htmlToPlainText(excerpt),
                     actionName,
                     avatarUrl,
                     type,
@@ -591,11 +592,11 @@ const showSearchPrompt = () => {
                                         </div>
 
                                         <div class="content-title" v-if="item.title">
-                                            <h3 v-html="item.title"></h3>
+                                            <h3>{{ htmlToPlainText(item.title) }}</h3>
                                         </div>
 
                                         <div class="content-preview" v-if="item.excerpt">
-                                            <div class="excerpt-text" v-html="item.excerpt"></div>
+                                            <div class="excerpt-text">{{ htmlToPlainText(item.excerpt) }}</div>
                                         </div>
                                     </f7-card-content>
 

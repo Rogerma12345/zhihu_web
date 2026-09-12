@@ -1,4 +1,5 @@
 <script setup>
+import { htmlToPlainText } from '../utils/content-text.js';
 const props = defineProps({
     item: Object,
 })
@@ -13,7 +14,7 @@ defineEmits(['click'])
                 <img :src="item.image" class="content-img" />
             </div>
 
-            <div class="title" v-html="item.title"></div>
+            <div class="title">{{ htmlToPlainText(item.title) }}</div>
 
             <div v-if="item.bottomText" class="bottom-text-line">
                 {{ item.bottomText }}
@@ -26,7 +27,7 @@ defineEmits(['click'])
                 >
                     {{ item.authorName || '匿名用户' }}：
                 </span>
-                <span class="excerpt-text" v-html="item.excerpt"></span>
+                <span class="excerpt-text">{{ htmlToPlainText(item.excerpt) }}</span>
             </div>
         </f7-card-content>
 

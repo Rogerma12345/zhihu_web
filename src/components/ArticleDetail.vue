@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
-import ContentRenderer from './ContentRenderer.vue';
+import EnhancedContentRenderer from './EnhancedContentRenderer.vue';
 import CommentsSheet from './CommentsSheet.vue';
 import CollectionSheet from './CollectionSheet.vue';
 import { HistoryService } from '../services/historyService.js';
@@ -493,7 +493,7 @@ const copyOriginalLink = () => {
                     </f7-card-content>
                 </f7-card>
 
-                <ContentRenderer :segments="item.structured_content" @imageClick="handleImageClick" />
+                <EnhancedContentRenderer :segments="item.structured_content" @imageClick="handleImageClick" />
 
                 <div v-if="imageList.length > 0" class="image-gallery margin-top">
                     <swiper-container pagination>
@@ -582,8 +582,9 @@ const copyOriginalLink = () => {
 }
 
 .glass {
-    background: rgba(255, 255, 255, 0.9);
+    background: transparent;
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
 
 .top-bar {
@@ -675,7 +676,7 @@ const copyOriginalLink = () => {
 
 .content-wrapper {
     padding: 24px;
-    padding-bottom: 120px;
+    padding-bottom: 24px;
     max-width: 800px;
     margin: auto;
 }
@@ -737,14 +738,13 @@ const copyOriginalLink = () => {
 }
 
 .bottom-float-container {
-    position: absolute;
-    bottom: 20px;
-    left: 0;
-    right: 0;
+    position: relative;
     display: flex;
     justify-content: center;
+    width: 100%;
+    margin: 20px 0 24px;
     pointer-events: none;
-    z-index: 500;
+    z-index: 20;
 }
 
 .float-bar {
@@ -753,14 +753,15 @@ const copyOriginalLink = () => {
     align-items: center;
     padding: 4px 8px;
     border-radius: 28px;
-    background: rgba(var(--f7-bg-color-rgb, 255, 255, 255), 0.75);
+    background: var(--f7-card-bg-color, var(--f7-page-bg-color, Canvas));
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(var(--f7-theme-color-rgb), 0.15);
+    border: 1px solid var(--f7-border-color, rgba(127, 127, 127, 0.24));
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
     gap: 2px;
     transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
+
+    color: var(--f7-text-color, CanvasText);}
 
 .float-bar:hover {
     transform: translateY(-2px);
@@ -906,4 +907,5 @@ s-carousel-item {
     background-size: cover;
     background-position: center;
 }
+
 </style>

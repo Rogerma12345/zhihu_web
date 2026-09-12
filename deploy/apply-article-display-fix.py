@@ -378,6 +378,238 @@ def patch_sync_script(rel: str) -> None:
     write(rel, text)
 
 
+
+# BEGIN article display v2 integrated
+def _v2_read(rel: str) -> str:
+    path = ROOT / rel
+    if not path.exists():
+        raise RuntimeError(f'missing file: {rel}')
+    return path.read_text(encoding='utf-8')
+
+def _v2_write(rel: str, text: str) -> None:
+    path = ROOT / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding='utf-8')
+
+def _v2_ensure_script_import(text: str, import_line: str) -> str:
+    if import_line in text:
+        return text
+    match = re.search('<script\\s+setup[^>]*>', text)
+    if not match:
+        raise RuntimeError('missing <script setup>')
+    return text[:match.end()] + '\n' + import_line + text[match.end():]
+
+def _v2_replace_style_block(text: str, selector: str, new_block: str) -> str:
+    pattern = re.compile(f'{re.escape(selector)}\\s*\\{{.*?\\}}', re.S)
+    match = pattern.search(text)
+    if not match:
+        raise RuntimeError(f'missing style block: {selector}')
+    return text[:match.start()] + new_block + text[match.end():]
+
+def _v2_patch_search_page(rel: str='src/components/SearchPage.vue') -> None:
+    text = _v2_read(rel)
+    text = re.sub('\\s*@keydown\\.enter\\s*=\\s*"__handleSearchbarEnter"', '', text)
+    text = re.sub('\\s*@submit\\.prevent\\s*=\\s*"__handleSearchbarEnter"', '', text)
+    text = re.sub('\\nfunction\\s+__handleSearchbarEnter\\s*\\(event\\)\\s*\\{.*?\\n\\}\\n', '\n', text, flags=re.S)
+    if 'const handleSearchbarKeydown = (event) =>' not in text:
+        anchor = 'const handleTabRefresh = async (tabId, done) => {'
+        helper = "const handleSearchbarKeydown = (event) => {\n    const nativeEvent = event?.originalEvent || event;\n    const isEnter = nativeEvent?.key === 'Enter' || nativeEvent?.keyCode === 13;\n    if (!isEnter) return;\n    if (nativeEvent?.isComposing || nativeEvent?.keyCode === 229) return;\n    nativeEvent?.preventDefault?.();\n    nativeEvent?.stopPropagation?.();\n    handleSearch();\n};\n\n"
+        if anchor not in text:
+            raise RuntimeError(f'{rel}: handleTabRefresh anchor not found')
+        text = text.replace(anchor, helper + anchor, 1)
+    opening = re.search('<f7-searchbar\\b[^>]*>', text, flags=re.S)
+    if not opening:
+        raise RuntimeError(f'{rel}: <f7-searchbar> not found')
+    tag = opening.group(0)
+    tag = re.sub('\\s+@keydown\\s*=\\s*"handleSearchbarKeydown"', '', tag)
+    tag = re.sub('\\s+@submit\\.prevent\\s*=\\s*"handleSearch\\(\\)"', '', tag)
+    tag = tag[:-1] + '\n                @keydown="handleSearchbarKeydown" @submit.prevent="handleSearch()">'
+    text = text[:opening.start()] + tag + text[opening.end():]
+    _v2_write(rel, text)
+
+def _v2_patch_feed_card(rel: str='src/components/FeedCard.vue') -> None:
+    text = _v2_read(rel)
+    text = _v2_ensure_script_import(text, "import { htmlToPlainText } from '../utils/content-text.js';")
+    text = text.replace('<div class="title" v-html="item.title"></div>', '<div class="title">{{ htmlToPlainText(item.title) }}</div>')
+    text = text.replace('<span class="excerpt-text" v-html="item.excerpt"></span>', '<span class="excerpt-text">{{ htmlToPlainText(item.excerpt) }}</span>')
+    text = text.replace('<div class="title" v-text="htmlToPlainText(item.title)"></div>', '<div class="title">{{ htmlToPlainText(item.title) }}</div>')
+    text = text.replace('<span class="excerpt-text" v-text="htmlToPlainText(item.excerpt)"></span>', '<span class="excerpt-text">{{ htmlToPlainText(item.excerpt) }}</span>')
+    if 'v-html=' in text:
+        raise RuntimeError(f'{rel}: untrusted v-html remains after patch')
+    _v2_write(rel, text)
+
+def _v2_patch_user_profile(rel: str='src/components/UserProfile.vue') -> None:
+    text = _v2_read(rel)
+    text = _v2_ensure_script_import(text, "import { htmlToPlainText } from '../utils/content-text.js';")
+    text = text.replace('<h3 v-html="item.title"></h3>', '<h3>{{ htmlToPlainText(item.title) }}</h3>')
+    text = text.replace('<div class="excerpt-text" v-html="item.excerpt"></div>', '<div class="excerpt-text">{{ htmlToPlainText(item.excerpt) }}</div>')
+    text = text.replace('<h3 v-text="htmlToPlainText(item.title)"></h3>', '<h3>{{ htmlToPlainText(item.title) }}</h3>')
+    text = text.replace('<div class="excerpt-text" v-text="htmlToPlainText(item.excerpt)"></div>', '<div class="excerpt-text">{{ htmlToPlainText(item.excerpt) }}</div>')
+    text = re.sub('(\\n\\s*return\\s*\\{\\s*\\n\\s*)title,\\s*\\n\\s*excerpt,', '\\1title: htmlToPlainText(title),\\n                    excerpt: htmlToPlainText(excerpt),', text, count=1)
+    if 'v-html=' in text:
+        raise RuntimeError(f'{rel}: untrusted v-html remains after patch')
+    _v2_write(rel, text)
+
+def _v2_patch_article_detail(rel: str='src/components/ArticleDetail.vue') -> None:
+    text = _v2_read(rel)
+    if "import EnhancedContentRenderer from './EnhancedContentRenderer.vue';" not in text:
+        if "import ContentRenderer from './ContentRenderer.vue';" in text:
+            text = text.replace("import ContentRenderer from './ContentRenderer.vue';", "import EnhancedContentRenderer from './EnhancedContentRenderer.vue';", 1)
+        else:
+            text = _v2_ensure_script_import(text, "import EnhancedContentRenderer from './EnhancedContentRenderer.vue';")
+    if '<ContentRenderer' in text and 'item.structured_content' in text:
+        pattern = re.compile('<ContentRenderer\\b(?P<attrs>[^>]*?:segments\\s*=\\s*["\\\']item\\.structured_content["\\\'][^>]*)>', re.S)
+        match = pattern.search(text)
+        if match:
+            attrs = match.group('attrs')
+            text = text[:match.start()] + f'<EnhancedContentRenderer{attrs}>' + text[match.end():]
+    if '<EnhancedContentRenderer' not in text:
+        raise RuntimeError(f'{rel}: structured content renderer was not replaced')
+    bottom_block = '.bottom-float-container {\n    position: relative;\n    display: flex;\n    justify-content: center;\n    width: 100%;\n    margin: 20px 0 24px;\n    pointer-events: none;\n    z-index: 20;\n}'
+    text = _v2_replace_style_block(text, '.bottom-float-container', bottom_block)
+    glass_block = '.glass {\n    background: transparent;\n    backdrop-filter: blur(10px);\n    -webkit-backdrop-filter: blur(10px);\n}'
+    text = _v2_replace_style_block(text, '.glass', glass_block)
+    content_match = re.search('(\\.content-wrapper\\s*\\{)(.*?)(\\})', text, re.S)
+    if not content_match:
+        raise RuntimeError(f'{rel}: .content-wrapper style block not found')
+    body = content_match.group(2)
+    if re.search('padding-bottom\\s*:', body):
+        body = re.sub('padding-bottom\\s*:\\s*[^;]+;', 'padding-bottom: 24px;', body)
+    else:
+        body += '\n    padding-bottom: 24px;'
+    text = text[:content_match.start()] + content_match.group(1) + body + content_match.group(3) + text[content_match.end():]
+    float_match = re.search('(\\.float-bar\\s*\\{)(.*?)(\\})', text, re.S)
+    if not float_match:
+        raise RuntimeError(f'{rel}: .float-bar style block not found')
+    fbody = float_match.group(2)
+    fbody = re.sub('background\\s*:\\s*[^;]+;', 'background: var(--f7-card-bg-color, var(--f7-page-bg-color, Canvas));', fbody, count=1)
+    fbody = re.sub('border\\s*:\\s*1px\\s+solid\\s+[^;]+;', 'border: 1px solid var(--f7-border-color, rgba(127, 127, 127, 0.24));', fbody, count=1)
+    if 'color:' not in fbody:
+        fbody += '\n    color: var(--f7-text-color, CanvasText);'
+    text = text[:float_match.start()] + float_match.group(1) + fbody + float_match.group(3) + text[float_match.end():]
+    text = re.sub('\\n:global\\(\\.dark\\) \\.bottom-float-container,\\s*\\n:global\\(html\\.dark\\) \\.bottom-float-container\\s*\\{.*?\\}\\s*\\n', '\n', text, flags=re.S)
+    _v2_write(rel, text)
+
+def _v2_patch_enhanced_renderer(rel: str) -> None:
+    text = _v2_read(rel)
+    if 'defineEmits' not in text:
+        anchor = 'const props = defineProps({'
+        if anchor not in text:
+            raise RuntimeError(f'{rel}: defineProps anchor missing')
+        text = text.replace(anchor, "const emit = defineEmits(['imageClick']);\n\n" + anchor, 1)
+    if '<ContentRenderer' in text and '@imageClick=' not in text:
+        pattern = re.compile('(<ContentRenderer\\s*\\n\\s*v-else-if="isLegacySupported\\(segment\\?\\.type\\)"\\s*\\n\\s*:segments="\\[segment\\]"\\s*)(/>)')
+        if pattern.search(text):
+            text = pattern.sub(lambda m: m.group(1) + '\n        @imageClick="emit(\'imageClick\', $event)"\n      ' + m.group(2), text, count=1)
+        else:
+            text = text.replace(':segments="[segment]"', ':segments="[segment]" @imageClick="emit(\'imageClick\', $event)"', 1)
+    _v2_write(rel, text)
+
+def _v2_patch_content_renderer(rel: str='src/components/ContentRenderer.vue') -> None:
+    text = _v2_read(rel)
+    text = _v2_ensure_script_import(text, "import { htmlToPlainText, safeHttpUrl } from '../utils/content-text.js';")
+    old = "        return {\n            title: segment.card.title,\n            desc: extra.desc || extra.description || '',\n            url: extra.url || '#',\n            cover: segment.card.cover\n        };"
+    new = "        return {\n            title: htmlToPlainText(segment.card.title || extra.title || ''),\n            desc: htmlToPlainText(extra.desc || extra.description || segment.card.description || ''),\n            url: safeHttpUrl(extra.url || extra.href || segment.card.url || segment.card.href || '') || '#',\n            cover: segment.card.cover\n        };"
+    if old in text:
+        text = text.replace(old, new, 1)
+    else:
+        text = text.replace('title: segment.card.title,', "title: htmlToPlainText(segment.card.title || extra.title || ''),")
+        text = text.replace("desc: extra.desc || extra.description || '',", "desc: htmlToPlainText(extra.desc || extra.description || segment.card.description || ''),")
+        text = text.replace("url: extra.url || '#',", "url: safeHttpUrl(extra.url || extra.href || segment.card.url || segment.card.href || '') || '#',")
+    text = text.replace("return { title: segment.card.title, desc: '', url: '#' };", "return { title: htmlToPlainText(segment.card.title || ''), desc: '', url: safeHttpUrl(segment.card.url || segment.card.href || '') || '#' };")
+    text = text.replace("backgroundColor: '#f5f5f5'", "backgroundColor: 'var(--app-placeholder-bg)'")
+    _v2_write(rel, text)
+
+def _v2_patch_reference_renderer(rel: str) -> None:
+    text = _v2_read(rel)
+    text = text.replace("import { safeHttpUrl } from '../utils/content-text.js';", "import { htmlToPlainText, safeHttpUrl } from '../utils/content-text.js';")
+    if 'import { htmlToPlainText, safeHttpUrl }' not in text:
+        text = _v2_ensure_script_import(text, "import { htmlToPlainText, safeHttpUrl } from '../utils/content-text.js';")
+    text = text.replace("return String(item?.text || '').trim();", "return htmlToPlainText(item?.text || '');")
+    text = re.sub('<RenderStyledText\\s*\\n\\s*v-else\\s*\\n\\s*:text=\\"item\\?\\.text \\|\\| \'\'\\"\\s*\\n\\s*:marks=\\"item\\?\\.marks \\|\\| \\[\\]\\"\\s*\\n\\s*/>', '<span v-else>{{ cleanItemText(item) }}</span>', text, flags=re.S)
+    item_href_pattern = re.compile('function itemHref\\(item\\) \\{.*?\\n\\}', re.S)
+    if item_href_pattern.search(text):
+        text = item_href_pattern.sub("function itemHref(item) {\n  const marks = Array.isArray(item?.marks) ? item.marks : [];\n  const markUrl = marks\n    .filter((mark) => mark?.type === 'link')\n    .map((mark) => mark?.link?.href || mark?.link?.url || mark?.href || mark?.url || '')\n    .find(Boolean);\n  const explicit = item?.link?.href || item?.link?.url || item?.href || item?.url || markUrl || '';\n  return safeHttpUrl(explicit) || findTextUrl(item?.text);\n}", text, count=1)
+    text = text.replace('var(--f7-page-bg-color, #fff)', 'var(--app-surface-bg, Canvas)')
+    text = text.replace('var(--f7-text-color, #111)', 'var(--f7-text-color, CanvasText)')
+    _v2_write(rel, text)
+
+def _v2_patch_render_styled_text(rel: str) -> None:
+    text = _v2_read(rel)
+    text = text.replace('mix-blend-mode: screen;', 'mix-blend-mode: difference;')
+    _v2_write(rel, text)
+
+def _v2_patch_theme_fallbacks(rel: str) -> None:
+    path = ROOT / rel
+    if not path.exists():
+        return
+    text = _v2_read(rel)
+    text = text.replace('var(--f7-page-bg-color, #fff)', 'var(--app-surface-bg, Canvas)')
+    text = text.replace('var(--f7-text-color, #111)', 'var(--f7-text-color, CanvasText)')
+    _v2_write(rel, text)
+
+def _v2_patch_template_copies() -> None:
+    base = ROOT / 'deploy' / 'fork-templates' / 'article-display'
+    if not base.exists():
+        return
+    enhanced = base / 'EnhancedContentRenderer.vue'
+    if enhanced.exists():
+        _v2_patch_enhanced_renderer(str(enhanced.relative_to(ROOT)))
+    reference = base / 'ReferenceBlockRenderer.vue'
+    if reference.exists():
+        _v2_patch_reference_renderer(str(reference.relative_to(ROOT)))
+    styled = base / 'RenderStyledText.vue'
+    if styled.exists():
+        _v2_patch_render_styled_text(str(styled.relative_to(ROOT)))
+    for name in ['CodeBlockRenderer.vue', 'UnknownSegmentRenderer.vue']:
+        component = base / name
+        if component.exists():
+            _v2_patch_theme_fallbacks(str(component.relative_to(ROOT)))
+
+
+def _normalize_article_display_whitespace() -> None:
+    """
+    v1 may temporarily recreate obsolete patches which v2 removes later in
+    the same apply run. Their removal can leave extra blank lines behind.
+    Normalize only the two known closing-tag locations so repeated apply
+    runs produce byte-for-byte identical output.
+    """
+    targets = (
+        ('src/components/SearchPage.vue', '</script>'),
+        ('src/components/ArticleDetail.vue', '</style>'),
+    )
+
+    for rel, closing_tag in targets:
+        path = ROOT / rel
+        if not path.exists():
+            continue
+
+        original = path.read_text(encoding='utf-8')
+
+        # Keep exactly one blank line before the relevant closing tag.
+        # 3+ newline characters => 2 newline characters.
+        pattern = (
+            r'\n(?:[ \t]*\n){2,}'
+            + r'(?=[ \t]*'
+            + re.escape(closing_tag)
+            + r')'
+        )
+
+        normalized = re.sub(
+            pattern,
+            '\n\n',
+            original,
+        )
+
+        if normalized != original:
+            path.write_text(
+                normalized,
+                encoding='utf-8',
+            )
+
+
+# END article display v2 integrated
+
 def main() -> None:
     copy_templates()
     patch_article_detail()
@@ -395,6 +627,21 @@ def main() -> None:
     patch_sync_script('deploy/sync-upstream.sh')
     patch_sync_script('deploy/fork-templates/sync-upstream.sh')
 
+
+    # Permanent v2 pass; no standalone hotfix script is required.
+    _v2_patch_search_page()
+    _v2_patch_feed_card()
+    _v2_patch_user_profile()
+    _v2_patch_article_detail()
+    _v2_patch_enhanced_renderer('src/components/EnhancedContentRenderer.vue')
+    _v2_patch_content_renderer()
+    _v2_patch_reference_renderer('src/components/ReferenceBlockRenderer.vue')
+    _v2_patch_render_styled_text('src/components/RenderStyledText.vue')
+    _v2_patch_theme_fallbacks('src/components/CodeBlockRenderer.vue')
+    _v2_patch_theme_fallbacks('src/components/UnknownSegmentRenderer.vue')
+    _v2_patch_template_copies()
+
+    _normalize_article_display_whitespace()
     print('article display fix applied')
     print('search Enter patched:', ', '.join(search_patched))
 

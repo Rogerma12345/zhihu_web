@@ -396,6 +396,16 @@ const handleInputClear = () => {
     showSuggestions.value = false;
 };
 
+const handleSearchbarKeydown = (event) => {
+    const nativeEvent = event?.originalEvent || event;
+    const isEnter = nativeEvent?.key === 'Enter' || nativeEvent?.keyCode === 13;
+    if (!isEnter) return;
+    if (nativeEvent?.isComposing || nativeEvent?.keyCode === 229) return;
+    nativeEvent?.preventDefault?.();
+    nativeEvent?.stopPropagation?.();
+    handleSearch();
+};
+
 const handleTabRefresh = async (tabId, done) => {
     await executeSearch(true, tabId);
     done();
@@ -407,6 +417,7 @@ const handleTabLoadMore = async (tabId) => {
         await executeSearch(false, tabId);
     }
 };
+
 </script>
 
 <template>
@@ -419,7 +430,8 @@ const handleTabLoadMore = async (tabId) => {
             </f7-nav-left>
             <f7-searchbar custom-search v-model:value="query" @searchbar:search="debouncedSuggestions($event.value)"
                 @searchbar:clear="handleInputClear" placeholder="搜索..." :disable-button="false"
-                clear-button></f7-searchbar>
+                clear-button
+                @keydown="handleSearchbarKeydown" @submit.prevent="handleSearch()"></f7-searchbar>
             <f7-nav-right>
                 <f7-link @click="() => handleSearch()">搜索</f7-link>
             </f7-nav-right>

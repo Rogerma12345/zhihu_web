@@ -14,11 +14,7 @@
         target="_blank"
         rel="noopener noreferrer"
       >{{ cleanItemText(item) }}</a>
-      <RenderStyledText
-        v-else
-        :text="item?.text || ''"
-        :marks="item?.marks || []"
-      />
+      <span v-else>{{ cleanItemText(item) }}</span>
     </div>
   </aside>
 </template>
@@ -26,7 +22,7 @@
 <script setup>
 import { computed } from 'vue';
 import RenderStyledText from './RenderStyledText.vue';
-import { safeHttpUrl } from '../utils/content-text.js';
+import { htmlToPlainText, safeHttpUrl } from '../utils/content-text.js';
 
 const props = defineProps({
   block: {
@@ -40,7 +36,7 @@ const items = computed(() => (
 ));
 
 function cleanItemText(item) {
-  return String(item?.text || '').trim();
+  return htmlToPlainText(item?.text || '');
 }
 
 function findTextUrl(text) {
@@ -50,10 +46,11 @@ function findTextUrl(text) {
 
 function itemHref(item) {
   const marks = Array.isArray(item?.marks) ? item.marks : [];
-  const explicit = marks
+  const markUrl = marks
     .filter((mark) => mark?.type === 'link')
-    .map((mark) => mark?.link?.href || mark?.link?.url || '')
+    .map((mark) => mark?.link?.href || mark?.link?.url || mark?.href || mark?.url || '')
     .find(Boolean);
+  const explicit = item?.link?.href || item?.link?.url || item?.href || item?.url || markUrl || '';
   return safeHttpUrl(explicit) || findTextUrl(item?.text);
 }
 
@@ -69,13 +66,13 @@ function indentStyle(item) {
   padding: 0.75em 0.9em;
   border-inline-start: 3px solid color-mix(in srgb, var(--f7-theme-color, #0c7ff2) 58%, transparent);
   border-radius: 0 8px 8px 0;
-  background: color-mix(in srgb, var(--f7-page-bg-color, #fff) 94%, var(--f7-text-color, #111) 6%);
-  color: var(--f7-text-color, #111);
+  background: color-mix(in srgb, var(--app-surface-bg, Canvas) 94%, var(--f7-text-color, CanvasText) 6%);
+  color: var(--f7-text-color, CanvasText);
 }
 
 .reference-label {
   margin-bottom: 0.35em;
-  color: color-mix(in srgb, var(--f7-text-color, #111) 58%, transparent);
+  color: color-mix(in srgb, var(--f7-text-color, CanvasText) 58%, transparent);
   font-size: 0.78em;
 }
 

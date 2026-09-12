@@ -282,11 +282,11 @@ async function copyCode() {
 <style scoped>
 .code-block-renderer {
   margin: 1em 0;
-  border: 1px solid color-mix(in srgb, var(--f7-text-color, #111) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--f7-text-color, CanvasText) 12%, transparent);
   border-radius: 10px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--f7-page-bg-color, #fff) 94%, var(--f7-text-color, #111) 6%);
-  color: var(--f7-text-color, #111);
+  background: color-mix(in srgb, var(--app-surface-bg, Canvas) 94%, var(--f7-text-color, CanvasText) 6%);
+  color: var(--f7-text-color, CanvasText);
   --code-comment: #6a737d;
   --code-keyword: #a626a4;
   --code-string: #50a14f;
@@ -319,8 +319,8 @@ async function copyCode() {
   justify-content: space-between;
   min-height: 34px;
   padding: 0 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--f7-text-color, #111) 10%, transparent);
-  color: color-mix(in srgb, var(--f7-text-color, #111) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--f7-text-color, CanvasText) 10%, transparent);
+  color: color-mix(in srgb, var(--f7-text-color, CanvasText) 70%, transparent);
   font-size: 12px;
 }
 
@@ -335,12 +335,12 @@ async function copyCode() {
   border-radius: 6px;
   padding: 4px 8px;
   color: inherit;
-  background: color-mix(in srgb, var(--f7-text-color, #111) 8%, transparent);
+  background: color-mix(in srgb, var(--f7-text-color, CanvasText) 8%, transparent);
   cursor: pointer;
 }
 
 .code-copy:hover {
-  background: color-mix(in srgb, var(--f7-text-color, #111) 13%, transparent);
+  background: color-mix(in srgb, var(--f7-text-color, CanvasText) 13%, transparent);
 }
 
 .code-pre {

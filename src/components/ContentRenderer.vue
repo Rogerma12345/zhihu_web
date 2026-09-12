@@ -1,4 +1,5 @@
 <script setup>
+import { htmlToPlainText, safeHttpUrl } from '../utils/content-text.js';
 import { computed } from 'vue';
 import ZVideoPlayer from './ZVideoPlayer.vue';
 import RenderStyledText from './RenderStyledText.vue';
@@ -30,13 +31,13 @@ const getCardInfo = (segment) => {
     try {
         const extra = segment.card.extra_info ? JSON.parse(segment.card.extra_info) : {};
         return {
-            title: segment.card.title,
-            desc: extra.desc || extra.description || '',
-            url: extra.url || '#',
+            title: htmlToPlainText(segment.card.title || extra.title || ''),
+            desc: htmlToPlainText(extra.desc || extra.description || segment.card.description || ''),
+            url: safeHttpUrl(extra.url || extra.href || segment.card.url || segment.card.href || '') || '#',
             cover: segment.card.cover
         };
     } catch (e) {
-        return { title: segment.card.title, desc: '', url: '#' };
+        return { title: htmlToPlainText(segment.card.title || ''), desc: '', url: safeHttpUrl(segment.card.url || segment.card.href || '') || '#' };
     }
 };
 </script>
@@ -81,7 +82,7 @@ const getCardInfo = (segment) => {
             <figure v-else-if="segment.type === 'image'" class="image-figure">
                 <div class="image-wrapper" :style="{
                     aspectRatio: (segment.image.width && segment.image.height) ? `${segment.image.width} / ${segment.image.height}` : 'auto',
-                    backgroundColor: '#f5f5f5'
+                    backgroundColor: 'var(--app-placeholder-bg)'
                 }">
                     <img :src="segment.image.urls?.[0]" :alt="segment.image.description || 'Article Image'"
                         class="article-image" loading="lazy" @click="handleImageClick(segment.image.urls?.[0])" />
