@@ -792,7 +792,7 @@ watch(currentSectionIndex, refreshHighlight);
 
 <template>
     <!-- 不使用:page-content='false' 使用后处理双重tab较麻烦 -->
-    <f7-page name="home">
+    <f7-page name="home" :page-content="false">
         <!-- Using TopBar here -->
         <template #fixed>
             <TopBar :f7router="f7router" />
