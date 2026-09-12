@@ -1,4 +1,5 @@
 <script setup>
+import { htmlToPlainText } from '../utils/content-text.js';
 import { ref, onMounted, computed } from 'vue';
 import $http from '../api/http.js';
 import { useHistory } from '../composables/useHistory.js';
@@ -101,8 +102,7 @@ const fetchItems = async (isRefresh = false) => {
 const resolveItem = (item) => {
     const obj = item.object || item;
 
-    // 提前清洗标题和摘要中的 HTML 标签
-    const cleanText = (text = '') => text.replace(/<[^>]*>?/gm, '');
+    const cleanText = htmlToPlainText;
     const id = obj.id;
     const type = obj.type === 'pin_general' ? 'pin' : obj.type;
 
@@ -115,7 +115,7 @@ const resolveItem = (item) => {
     switch (type) {
         case 'answer':
             action = '添加了回答';
-            title = obj.question?.title || title;
+            title = htmlToPlainText(obj.question?.title || title);
             break;
 
         case 'topic':
@@ -133,7 +133,7 @@ const resolveItem = (item) => {
             break;
         case 'pin':
             action = '添加了想法';
-            excerpt = obj.content?.[0]?.content || '';
+            excerpt = htmlToPlainText(obj.content?.[0]?.content || '');
             likes = obj.like_count || likes;
             title = (obj.author?.name || '匿名') + '发布了想法';
             break;
@@ -150,8 +150,8 @@ const resolveItem = (item) => {
     return {
         id,
         type,
-        title,
-        excerpt,
+        title: htmlToPlainText(title),
+        excerpt: htmlToPlainText(excerpt),
         action,
         metrics: { likes, comments },
     };

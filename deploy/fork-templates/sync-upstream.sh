@@ -48,6 +48,7 @@ emit_output upstream_sha "$upstream_sha"
 if [[ "$upstream_sha" == "$state_sha" ]]; then
   python3 deploy/verify-project-fixes.py "$repo_root"
   python3 deploy/verify-network-request-fix.py "$repo_root"
+  python3 deploy/verify-article-display-fix.py "$repo_root"
   emit_output upstream_changed false
   exit 0
 fi
@@ -83,6 +84,8 @@ fi
 rsync   --archive   --delete   "--exclude=/.git/"   "--exclude=/.github/workflows/"   "--exclude=/Dockerfile"   "--exclude=/.dockerignore"   "--exclude=/deploy/"   "--exclude=/.upstream-state"   "--exclude=/SELFHOST.md"   "$snapshot_dir/"   "$repo_root/"
 python3 deploy/apply-fork-patches.py "$repo_root"
 python3 deploy/apply-network-request-fix.py "$repo_root"
+python3 deploy/apply-article-display-fix.py "$repo_root"
 python3 deploy/verify-project-fixes.py "$repo_root"
 python3 deploy/verify-network-request-fix.py "$repo_root"
+python3 deploy/verify-article-display-fix.py "$repo_root"
 emit_output upstream_changed true
