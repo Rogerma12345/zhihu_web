@@ -32,14 +32,11 @@ const loadSettings = () => {
         if (stored) {
             const config = JSON.parse(stored);
             if (config.tabs && Array.isArray(config.tabs)) {
-                const newTabs = [];
-                config.tabs.forEach(t => {
-                    if (t.enabled && allTabDefinitions[t.id]) {
-                        newTabs.push(allTabDefinitions[t.id]);
-                    }
-                });
-                enabledTabs.value = newTabs;
+                enabledTabs.value = config.tabs
+                    .filter(t => t.enabled && allTabDefinitions[t.id])
+                    .map(t => allTabDefinitions[t.id]);
             }
+
             if (config.default && enabledTabs.value.some(t => t.id === config.default)) {
                 activeTab.value = config.default;
             } else if (enabledTabs.value.length > 0) {
@@ -57,205 +54,266 @@ const loadSettings = () => {
     } catch (e) {
         console.error('Failed to load home settings', e);
     }
-    fetchRecommendSections();
+
+    if (enabledTabs.value.length === 0) {
+        enabledTabs.value = [allTabDefinitions.recommend];
+        activeTab.value = 'recommend';
+    }
 };
 
-// 根据当前激活的标签页加载对应数据
-const loadCurrentTabData = (isRefresh) => {
-    if (!activeTab.value) return;
-
-    const dataCheckMap = {
-        'recommend': () => recommendList.value.length > 0,
-        'hot': () => hotList.value.length > 0,
-        'thoughts': () => thoughtsList.value.length > 0,
-        'following': () => momentsTabData[momentsActiveTab.value].list.length > 0,
-    };
-
-    if (isRefresh === undefined && dataCheckMap[activeTab.value]?.()) {
-        return;
-    }
-
-    const refresh = isRefresh !== undefined ? isRefresh : true;
-
-    const fetchMap = {
-        'recommend': () => fetchRecommendData(refresh),
-        'hot': () => fetchHotData(),
-        'thoughts': () => fetchThoughtsData(refresh),
-        'following': () => fetchMomentsData(momentsActiveTab.value, refresh),
-    };
-
-    fetchMap[activeTab.value]?.();
+const hasNextPage = (result) => {
+    return Boolean(
+        result?.paging &&
+        result.paging.is_end !== true &&
+        result.paging.next
+    );
 };
 
-// 监听主标签页切换
-watch(activeTab, (newTab, oldTab) => {
-    if (newTab !== oldTab) {
-        loadCurrentTabData();
-    }
-});
+/*
+ * Framework7 的 infinite scroll 只在滚动事件发生时检查是否接近底部。
+ * 双栏桌面布局中，接口首批有效卡片可能不足一屏，此时根本不会产生滚动事件。
+ * 这里在 DOM 更新后主动检查可滚动高度，不足一屏就继续请求下一页。
+ * 限制最多连续补 6 页，避免异常 API 返回空数据时形成无限请求。
+ */
+const viewportFillRounds = new Map();
+const MAX_VIEWPORT_FILL_ROUNDS = 6;
 
+const resetViewportFill = (key) => {
+    viewportFillRounds.delete(key);
+};
 
+const ensureViewportFilled = async ({ key, selector, canLoadMore, loadMore }) => {
+    await nextTick();
+
+    requestAnimationFrame(() => {
+        const el = document.querySelector(selector);
+        if (!el || !canLoadMore()) {
+            resetViewportFill(key);
+            return;
+        }
+
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+
+        if (el.scrollHeight > el.clientHeight + 1) {
+            resetViewportFill(key);
+            return;
+        }
+
+        const rounds = viewportFillRounds.get(key) || 0;
+        if (rounds >= MAX_VIEWPORT_FILL_ROUNDS) return;
+
+        viewportFillRounds.set(key, rounds + 1);
+        loadMore();
+    });
+};
 
 // 推荐模块
 const lastRecommendResult = ref(null);
 const recommendList = ref([]);
 const hasMoreRecommend = ref(true);
 const isRecommendLoading = ref(false);
+const selectedSections = ref([]);
+const hometab = ref([]);
+const currentSectionIndex = ref(0);
+let recommendRequestId = 0;
+
+const getRecommendUrl = () => {
+    const currentItem = hometab.value[currentSectionIndex.value];
+    if (!currentItem) return null;
+
+    const { section_id, sub_page_id } = currentItem;
+    if (section_id === null) {
+        return 'https://api.zhihu.com/topstory/recommend';
+    }
+    if (sub_page_id) {
+        return `https://api.zhihu.com/feed-root/section/${section_id}?sub_page_id=${sub_page_id}&channelStyle=0`;
+    }
+    return `https://api.zhihu.com/feed-root/section/${section_id}?channelStyle=0`;
+};
+
+const mapRecommendItem = (item) => {
+    if (!item || item.type !== 'feed') return null;
+
+    const targetItem = item.target || item;
+    if (!targetItem) return null;
+
+    const type = targetItem.type;
+    const id = targetItem.id;
+    const authorName = targetItem.author?.name || '';
+    let excerpt = targetItem.excerpt || targetItem.excerpt_title || '';
+    let title = targetItem.title || item.title || '无标题';
+
+    switch (type) {
+        case 'answer':
+            title = targetItem.question?.title || title;
+            break;
+        case 'pin':
+            title = `${authorName}发表了想法`;
+            break;
+        default:
+            break;
+    }
+
+    if (!excerpt || excerpt.trim() === '' || excerpt === '无预览内容') {
+        excerpt = null;
+    }
+
+    return {
+        type,
+        id,
+        title,
+        excerpt,
+        authorName,
+        metrics: {
+            likes: targetItem.voteup_count || targetItem.vote_count || targetItem.reaction_count || 0,
+            comments: targetItem.comment_count || 0
+        },
+    };
+};
+
+const scheduleRecommendViewportFill = () => {
+    ensureViewportFilled({
+        key: 'recommend',
+        selector: '#tab-recommend .recommend-scroll-content',
+        canLoadMore: () => (
+            activeTab.value === 'recommend' &&
+            hasMoreRecommend.value &&
+            !isRecommendLoading.value
+        ),
+        loadMore: () => fetchRecommendData(false),
+    });
+};
 
 const fetchRecommendData = async (isRefresh = false) => {
-    if (isRecommendLoading.value) return;
+    if (!isRefresh && (isRecommendLoading.value || !hasMoreRecommend.value)) return;
+
+    const url = getRecommendUrl();
+    if (!url) return;
+
+    const requestId = isRefresh ? ++recommendRequestId : recommendRequestId;
+
+    if (isRefresh) {
+        lastRecommendResult.value = null;
+        hasMoreRecommend.value = true;
+        resetViewportFill('recommend');
+    }
+
     isRecommendLoading.value = true;
+    let completed = false;
 
     try {
         let res;
 
-        // 获取当前选中的section
-        const currentItem = hometab.value[currentSectionIndex.value];
-        if (!currentItem) {
-            isRecommendLoading.value = false;
-            return;
-        }
-
-        const { section_id, sub_page_id } = currentItem;
-
         if (isRefresh || !lastRecommendResult.value) {
-            // 刷新时，根据section_id构建初始URL
-            let url;
-            if (section_id === null) {
-                url = 'https://api.zhihu.com/topstory/recommend';
-            } else {
-                if (sub_page_id) {
-                    url = `https://api.zhihu.com/feed-root/section/${section_id}?sub_page_id=${sub_page_id}&channelStyle=0`;
-                } else {
-                    url = `https://api.zhihu.com/feed-root/section/${section_id}?channelStyle=0`;
-                }
-            }
-            res = !lastRecommendResult.value ? await $http.get(url, { isWWW: true }) : await lastRecommendResult.value.prev();
+            res = await $http.get(url, { isWWW: true });
         } else {
             res = await lastRecommendResult.value.next();
         }
 
-        const rawList = res.data || [];
-        const recommendDataList = rawList.map(item => {
-            if (item.type !== "feed") {
-                return;
-            }
+        if (requestId !== recommendRequestId) return;
 
-            const targetItem = item.target || item;
-            const type = targetItem.type;
-            const id = targetItem.id
-            const authorName = targetItem.author ? targetItem.author.name : "";
+        if (!res) {
+            hasMoreRecommend.value = false;
+            completed = true;
+            return;
+        }
 
-            let excerpt = targetItem.excerpt || targetItem.excerpt_title || "";
-            let title = targetItem.title || item.title || "无标题";
-
-            switch (type) {
-                case "answer":
-                    title = targetItem.question ? targetItem.question.title : title;
-                    break;
-                case "pin":
-                    title = `${authorName}发表了想法`;
-                    break;
-            }
-
-            if (!excerpt || excerpt.trim() === "" || excerpt === "无预览内容") {
-                excerpt = null;
-            }
-
-            const likes = targetItem.voteup_count || targetItem.vote_count || targetItem.reaction_count || 0;
-            const comments = targetItem.comment_count || 0;
-
-            return {
-                type,
-                id,
-                title,
-                excerpt,
-                authorName,
-                metrics: {
-                    likes,
-                    comments
-                },
-            };
-
-        });
-
+        const responseData = res.data;
+        const rawList = Array.isArray(responseData) ? responseData : [];
+        const mappedList = rawList.map(mapRecommendItem).filter(Boolean);
 
         if (isRefresh) {
-            recommendList.value = recommendDataList;
+            recommendList.value = mappedList;
         } else {
-            recommendList.value.push(...recommendDataList);
+            recommendList.value.push(...mappedList);
         }
 
         lastRecommendResult.value = res;
-        hasMoreRecommend.value = !res.paging?.is_end;
-
+        hasMoreRecommend.value = hasNextPage(res);
+        completed = true;
     } catch (e) {
-        console.error("Failed to fetch recommend data", e);
+        if (requestId === recommendRequestId) {
+            console.error('Failed to fetch recommend data', e);
+        }
     } finally {
-        isRecommendLoading.value = false;
+        if (requestId === recommendRequestId) {
+            isRecommendLoading.value = false;
+            if (completed) scheduleRecommendViewportFill();
+        }
     }
 };
 
-// 刷新推荐section tabs高亮状态
 const refreshHighlight = () => {
     nextTick(() => {
         f7.toolbar.setHighlight('.recommend-section-tabs');
     });
 };
 
-// 主页推荐tabs模块
-const selectedSections = ref([]);
-const hometab = ref([]);
-const currentSectionIndex = ref(0);
-
-// 获取推荐section列表
 const fetchRecommendSections = async () => {
-    // 只有在推荐标签页启用时才获取推荐section列表
-    if (!enabledTabs.value.some(t => t.id === 'recommend')) {
-        return;
-    }
+    if (!enabledTabs.value.some(t => t.id === 'recommend')) return;
 
     try {
         const res = await $http.get('https://api.zhihu.com/feed-root/sections/query/v2', {
             isWWW: true
         });
 
-        // 解析返回的数据，获取selected_sections
-        const decoded_content = res;
-        let sections = decoded_content.selected_sections || [];
-
-        // 添加全站section到列表开头
-        sections.unshift({
-            section_name: '全站',
-            section_id: null,
-            sub_page_id: null,
-        });
+        const sections = [
+            {
+                section_name: '全站',
+                section_id: null,
+                sub_page_id: null,
+            },
+            ...(Array.isArray(res?.selected_sections) ? res.selected_sections : []),
+        ];
 
         selectedSections.value = sections;
-
-        // 初始化hometab数据结构
         hometab.value = sections.map(item => ({
             sub_page_id: item.sub_page_id,
             section_id: item.section_id
         }));
 
-        // 刷新当前选中section的内容
-        handleTabSelected(0);
+        if (currentSectionIndex.value >= hometab.value.length) {
+            currentSectionIndex.value = 0;
+        }
+
+        if (activeTab.value === 'recommend') {
+            await fetchRecommendData(true);
+        }
     } catch (e) {
-        console.error("Failed to fetch recommend sections", e);
+        console.error('Failed to fetch recommend sections', e);
+
+        // section 列表接口失败时仍保留“全站”推荐，避免首页完全无法加载。
+        if (hometab.value.length === 0) {
+            selectedSections.value = [{
+                section_name: '全站',
+                section_id: null,
+                sub_page_id: null,
+            }];
+            hometab.value = [{
+                section_id: null,
+                sub_page_id: null,
+            }];
+            currentSectionIndex.value = 0;
+
+            if (activeTab.value === 'recommend') {
+                await fetchRecommendData(true);
+            }
+        }
+    } finally {
+        refreshHighlight();
     }
 };
 
-// 处理tab选择事件
 const handleTabSelected = (pos) => {
+    if (pos < 0 || pos >= hometab.value.length) return;
     currentSectionIndex.value = pos;
-    // 刷新推荐数据 - fetchRecommendData会根据当前选择的section获取数据
     fetchRecommendData(true);
 };
 
 const onRecommendRefresh = async (done) => {
     await fetchRecommendData(true);
-    done();
+    if (done) done();
 };
 
 const onRecommendInfinite = () => {
@@ -273,9 +331,7 @@ const loadDefaultFollowing = () => {
         const stored = localStorage.getItem('home_tabs_config');
         if (stored) {
             const config = JSON.parse(stored);
-            if (config.defaultFollowing) {
-                return config.defaultFollowing;
-            }
+            if (config.defaultFollowing) return config.defaultFollowing;
         }
     } catch (e) {
         console.error('Failed to load defaultFollowing setting', e);
@@ -283,8 +339,7 @@ const loadDefaultFollowing = () => {
     return 'recommend';
 };
 
-const defaultFollowing = loadDefaultFollowing();
-momentsActiveTab.value = defaultFollowing;
+momentsActiveTab.value = loadDefaultFollowing();
 
 const momentsTabs = [
     { id: 'recommend', label: '精选', feedType: 'recommend' },
@@ -299,24 +354,18 @@ momentsTabs.forEach(tab => {
         list: [],
         loading: false,
         hasMore: true,
+        lastResult: null,
+        requestId: 0,
     };
 });
 
 const resolveMomentsFeed = (item) => {
-    const source = item.source || {};
+    const source = item?.source || {};
     const actor = source.actor || {};
-    const targetItem = item.target || item;
-
-    const type = targetItem.type === "moments_pin" ? "pin" : targetItem.type;
-    const id = targetItem.id;
-    const likes = targetItem.voteup_count || targetItem.reaction_count || 0;
-    const comments = targetItem.comment_count || 0;
-    const authorName = actor.name || '未知用户';
-    const actionText = source.action_text || '';
-    const avatarUrl = targetItem.author?.avatar_url || actor.avatar_url;
-    const timeText = source.action_time ? new Date(source.action_time * 1000).toLocaleDateString() : '';
+    const targetItem = item?.target || item || {};
+    const type = targetItem.type === 'moments_pin' ? 'pin' : targetItem.type;
+    const authorName = actor.name || targetItem.author?.name || '未知用户';
     const preview = targetItem.preview || '';
-
     let title = targetItem.title || targetItem.excerpt_title || '';
     let excerpt = targetItem.excerpt || '';
 
@@ -326,8 +375,8 @@ const resolveMomentsFeed = (item) => {
             break;
         case 'pin':
             title = title || '一个想法';
-            if (targetItem.content && targetItem.content.length > 0) {
-                excerpt = targetItem.content[0].content || excerpt;
+            if (Array.isArray(targetItem.content) && targetItem.content.length > 0) {
+                excerpt = targetItem.content[0]?.content || excerpt;
                 if (!excerpt && targetItem.content.some(c => c.type === 'image')) {
                     excerpt = '[图片]';
                 }
@@ -345,42 +394,41 @@ const resolveMomentsFeed = (item) => {
     }
 
     return {
-        id,
+        id: targetItem.id,
         type,
         title,
         excerpt,
         authorName,
-        avatarUrl,
-        actionText,
-        timeText,
+        avatarUrl: targetItem.author?.avatar_url || actor.avatar_url || '',
+        actionText: source.action_text || '',
+        timeText: source.action_time ? new Date(source.action_time * 1000).toLocaleDateString() : '',
         metrics: {
-            likes,
-            comments
+            likes: targetItem.voteup_count || targetItem.reaction_count || 0,
+            comments: targetItem.comment_count || 0
         }
     };
 };
 
 const resolveFeedItemIndexGroup = (item) => {
-    const targetItem = item.target || item;
-    const type = targetItem.type === "moments_pin" ? "pin" : targetItem.type;
+    const targetItem = item?.target || item || {};
+    const type = targetItem.type === 'moments_pin' ? 'pin' : targetItem.type;
+    let avatarUrl = '';
+    let authorName = '未知用户';
+    let actionText = '';
 
-    let avatarUrl, authorName, actionText;
-
-    if (item.actors && item.actors.length > 0) {
-        avatarUrl = item.actors[0].avatar_url;
-        authorName = item.actors[0].name;
+    if (Array.isArray(item?.actors) && item.actors.length > 0) {
+        avatarUrl = item.actors[0]?.avatar_url || '';
+        authorName = item.actors[0]?.name || '未知用户';
         actionText = authorName + (item.action_text || '');
     } else {
-        authorName = targetItem.author || '未知用户';
-        actionText = '';
-        avatarUrl = '';
+        authorName = targetItem.author?.name || '未知用户';
+        avatarUrl = targetItem.author?.avatar_url || '';
     }
 
-    const timeText = item.action_time ? new Date(item.action_time * 1000).toLocaleDateString() : '';
+    const timeText = item?.action_time ? new Date(item.action_time * 1000).toLocaleDateString() : '';
     let title = targetItem.title || targetItem.excerpt_title || '';
     let excerpt = targetItem.digest || '';
-
-
+    let id = targetItem.id;
     let likes = 0;
     let comments = 0;
 
@@ -395,12 +443,9 @@ const resolveFeedItemIndexGroup = (item) => {
     if (targetItem.desc) {
         const descMatch = targetItem.desc.match(/(\d+(?:\.\d+)?[万千]?)\s*赞同/);
         if (descMatch) likes = parseChineseNumber(descMatch[1]);
-
         const commentMatch = targetItem.desc.match(/(\d+(?:\.\d+)?[万千]?)\s*评论/);
         if (commentMatch) comments = parseChineseNumber(commentMatch[1]);
     }
-
-    let id = targetItem.id;
 
     switch (type) {
         case 'pin':
@@ -412,14 +457,17 @@ const resolveFeedItemIndexGroup = (item) => {
         case 'drama':
             if (!excerpt) excerpt = '[直播]';
             break;
-        case 'people':
+        case 'people': {
             const cardExtentData = targetItem.card_extend_data;
-            authorName = cardExtentData.name;
-            title = cardExtentData.description;
-            avatarUrl = cardExtentData.avatar_url;
-            excerpt = cardExtentData.headline;
-            id = cardExtentData.id;
+            if (cardExtentData) {
+                authorName = cardExtentData.name || authorName;
+                title = cardExtentData.description || title;
+                avatarUrl = cardExtentData.avatar_url || avatarUrl;
+                excerpt = cardExtentData.headline || excerpt;
+                id = cardExtentData.id || id;
+            }
             break;
+        }
         default:
             break;
     }
@@ -427,8 +475,6 @@ const resolveFeedItemIndexGroup = (item) => {
     if (excerpt && excerpt !== '[视频]' && excerpt !== '[直播]') {
         excerpt = `${authorName} : ${excerpt}`;
     }
-
-    const unfoldShowSize = item.unfold_show_size || 0;
 
     return {
         id,
@@ -439,7 +485,7 @@ const resolveFeedItemIndexGroup = (item) => {
         avatarUrl,
         actionText,
         timeText,
-        unfoldShowSize,
+        unfoldShowSize: item?.unfold_show_size || 0,
         metrics: {
             likes,
             comments
@@ -447,120 +493,112 @@ const resolveFeedItemIndexGroup = (item) => {
     };
 };
 
+const mapMomentsList = (rawList) => {
+    const mappedList = [];
+
+    for (const item of rawList) {
+        if (!item) continue;
+
+        switch (item.type) {
+            case 'moments_feed': {
+                const resolved = resolveMomentsFeed(item);
+                if (resolved) mappedList.push(resolved);
+                break;
+            }
+            case 'feed_item_index_group': {
+                const resolved = resolveFeedItemIndexGroup(item);
+                if (resolved) mappedList.push(resolved);
+                break;
+            }
+            case 'item_group_card': {
+                const actor = item.actor || {};
+                mappedList.push({
+                    type: 'collapsible_group',
+                    groupText: item.group_text,
+                    authorName: actor.name || '未知用户',
+                    avatarUrl: actor.avatar_url || '',
+                    actionText: item.action_text || '',
+                    timeText: item.action_time ? new Date(item.action_time * 1000).toLocaleDateString() : '',
+                    groupData: (item.data || []).map(resolveFeedItemIndexGroup).filter(Boolean),
+                    unfoldShowSize: item.unfold_show_size || 0,
+                    expanded: false
+                });
+                break;
+            }
+            case 'recommend_user_card_list':
+                mappedList.push(item);
+                break;
+            case 'moments_recommend_followed_group':
+                if (item.list?.length > 0) {
+                    const resolved = resolveMomentsFeed(item.list[0]);
+                    if (resolved) {
+                        // MomentListCard 已支持 groupText；直接附着在真实条目上，
+                        // 避免插入一个缺少 metrics 的伪条目导致渲染异常。
+                        resolved.groupText = item.group_text || '';
+                        mappedList.push(resolved);
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    return mappedList;
+};
+
+const scheduleMomentsViewportFill = (tabId) => {
+    const state = momentsTabData[tabId];
+    ensureViewportFilled({
+        key: `moments-${tabId}`,
+        selector: `.moments-scroll-content[data-feed-tab="${tabId}"]`,
+        canLoadMore: () => (
+            activeTab.value === 'following' &&
+            momentsActiveTab.value === tabId &&
+            state.hasMore &&
+            !state.loading
+        ),
+        loadMore: () => fetchMomentsData(tabId, false),
+    });
+};
+
 const fetchMomentsData = async (tabId, isRefresh = false) => {
     const state = momentsTabData[tabId];
-    if (state.loading) return;
-    if (!isRefresh && !state.hasMore) return;
+    if (!state) return;
+    if (!isRefresh && (state.loading || !state.hasMore)) return;
+
+    const requestId = isRefresh ? ++state.requestId : state.requestId;
+
+    if (isRefresh) {
+        state.lastResult = null;
+        state.hasMore = true;
+        resetViewportFill(`moments-${tabId}`);
+    }
 
     state.loading = true;
+    let completed = false;
 
     try {
         let res;
         if (isRefresh || !state.lastResult) {
             const feedType = momentsTabs.find(t => t.id === tabId)?.feedType;
-            const url = `https://api.zhihu.com/moments_v3?feed_type=${feedType}`;
-            res = !state.lastResult ? await $http.get(url) : await state.lastResult.prev();
+            if (!feedType) return;
+            res = await $http.get(`https://api.zhihu.com/moments_v3?feed_type=${feedType}`);
         } else {
             res = await state.lastResult.next();
         }
 
-        const rawList = res.data || [];
+        if (requestId !== state.requestId) return;
 
-        const mappedList = rawList.map(item => {
-            switch (item.type) {
-                case 'moments_feed':
-                    return resolveMomentsFeed(item);
-                    break;
+        if (!res) {
+            state.hasMore = false;
+            completed = true;
+            return;
+        }
 
-                case 'feed_item_index_group':
-                    return resolveFeedItemIndexGroup(item);
-                    break;
-
-                case 'item_group_card':
-                    // 简化item_group_card处理 直接将分组数据作为一个整体对象
-
-                    const actionText = item.action_text || '';
-                    const actor = item.actor;
-                    const authorName = actor.name || '未知用户';
-                    const avatarUrl = actor.avatar_url || '';
-                    const timeText = item.action_time ? new Date(item.action_time * 1000).toLocaleDateString() : '';
-
-                    const groupItem = {
-                        type: 'collapsible_group',
-                        groupText: item.group_text,
-                        authorName: authorName,
-                        avatarUrl: avatarUrl,
-                        actionText: actionText,
-                        timeText: timeText,
-                        groupData: (item.data || []).map(subItem => {
-                            const resolved = resolveFeedItemIndexGroup(subItem);
-                            if (resolved) {
-                                return resolved;
-                            }
-                            return null;
-                        }).filter(Boolean),
-                        unfoldShowSize: item.unfold_show_size || 0,
-                        expanded: false
-                    };
-                    return groupItem;
-                    break;
-
-                case 'recommend_user_card_list':
-                    // 处理推荐用户卡片列表 保持原type不变
-                    return item;
-                    break;
-
-                case 'moments_recommend_followed_group':
-                    if (item.list?.length > 0) {
-                        // 为moments_recommend_followed_group类型添加group_start标记，确保groupText显示在顶部
-                        const groupStartItem = {
-                            type: 'group_start',
-                            groupText: item.group_text,
-                            groupType: 'moments_recommend_followed_group'
-                        };
-                        mappedList.push(groupStartItem);
-
-                        const resolved = resolveMomentsFeed(item.list[0]);
-                        return resolved;
-                    }
-                    break;
-
-                default:
-                    //console.log(item);
-                    break;
-            }
-        });
-
-        /*
-        // 添加示例的recommend_user_card_list数据
-        const exampleRecommendUserCardList = {
-            "type": "recommend_user_card_list",
-            "title": "推荐关注",
-            "data": [
-                {
-                    "reason": "你的朋友李雷也关注了他",
-                    "actor": {
-                        "id": "user_001",
-                        "name": "张华",
-                        "headline": "test",
-                        "avatar_url": "https://pic4.zhimg.com/v2-abc123.jpg"
-                    }
-                },
-                {
-                    "reason": "你关注了科技话题",
-                    "actor": {
-                        "id": "user_002",
-                        "name": "王明",
-                        "headline": "test",
-                        "avatar_url": "https://pic4.zhimg.com/v2-def456.jpg"
-                    }
-                }
-            ]
-        };
-
-        // 将示例数据添加到列表中
-        mappedList.push(exampleRecommendUserCardList);
-        */
+        const responseData = res.data;
+        const rawList = Array.isArray(responseData) ? responseData : [];
+        const mappedList = mapMomentsList(rawList);
 
         if (isRefresh) {
             state.list = mappedList;
@@ -569,11 +607,17 @@ const fetchMomentsData = async (tabId, isRefresh = false) => {
         }
 
         state.lastResult = res;
-        state.hasMore = !res.paging?.is_end;
+        state.hasMore = hasNextPage(res);
+        completed = true;
     } catch (e) {
-        console.error(`Failed to fetch moments ${tabId}`, e);
+        if (requestId === state.requestId) {
+            console.error(`Failed to fetch moments ${tabId}`, e);
+        }
     } finally {
-        state.loading = false;
+        if (requestId === state.requestId) {
+            state.loading = false;
+            if (completed) scheduleMomentsViewportFill(tabId);
+        }
     }
 };
 
@@ -583,30 +627,31 @@ const onMomentsRefresh = async (tabId, done) => {
 };
 
 const onMomentsInfinite = (tabId) => {
-    fetchMomentsData(tabId);
+    fetchMomentsData(tabId, false);
 };
 
 const handleMomentsTabChange = (tabId) => {
     momentsActiveTab.value = tabId;
-    if (momentsTabData[tabId].list.length === 0) {
-        fetchMomentsData(tabId, true);
+    const state = momentsTabData[tabId];
+    if (!state) return;
+
+    if (state.list.length === 0) {
+        if (!state.loading) fetchMomentsData(tabId, true);
+    } else {
+        scheduleMomentsViewportFill(tabId);
     }
 };
 
-// 处理移除推荐用户卡片列表事件
 const handleRemoveRecommendUserCardList = (tabId, removedItem) => {
-    // 从momentsTabData中移除该推荐用户卡片列表
     momentsTabData[tabId].list = momentsTabData[tabId].list.filter(item =>
         !(item.type === 'recommend_user_card_list' && item.title === removedItem.title)
     );
 };
 
-
 const handleAuthorClick = (f7router, item) => {
-    if (!item.actor || !item.actor.id) return;
+    if (!item?.actor?.id) return;
     f7router.navigate(`/user/${item.actor.id}`);
 };
-
 // 关注模块结束
 
 // 热榜模块
@@ -618,31 +663,27 @@ const fetchHotData = async () => {
     isHotLoading.value = true;
 
     try {
-        const url = 'https://api.zhihu.com/topstory/hot-lists/total?limit=50&mobile=true';
-        const res = await $http.get(url);
-
-        const list = (res.data || []).map((item, i) => {
+        const res = await $http.get('https://api.zhihu.com/topstory/hot-lists/total?limit=50&mobile=true');
+        const responseData = res?.data;
+        const rawList = Array.isArray(responseData) ? responseData : [];
+        hotList.value = rawList.map((item, i) => {
             const target = item.target || {};
             const imageArea = target.image_area || {};
             const titleArea = target.title_area || {};
             const metricsArea = target.metrics_area || {};
             const linkInfo = target.link || {};
-
             return {
-                id: item.card_id.split("Q_")[1],
+                id: item.card_id?.split('Q_')[1] || item.card_id || i,
                 rank: i + 1,
                 title: titleArea.text || '无标题',
                 metricsArea: metricsArea.text || '',
                 url: linkInfo.url || '',
-                type: "question",
+                type: 'question',
                 thumbnailSrc: imageArea.url || ''
             };
         });
-
-        hotList.value = list;
-
     } catch (e) {
-        console.error("Failed to fetch hot data", e);
+        console.error('Failed to fetch hot data', e);
     } finally {
         isHotLoading.value = false;
     }
@@ -650,20 +691,16 @@ const fetchHotData = async () => {
 
 const onHotRefresh = async (done) => {
     await fetchHotData();
-    done();
+    if (done) done();
 };
 
 const handleHotListCardClick = (f7router, item) => {
-    const type = item.type;
-    const id = item.id;
-
-    if (type == "question") {
-        f7router.navigate(`/question/${id}`);
-    } else {
-        throw new Error("异常的类型", item)
+    if (item.type === 'question') {
+        f7router.navigate(`/question/${item.id}`);
+        return;
     }
+    console.error('Unexpected hot-list item type', item);
 };
-
 // 热榜模块结束
 
 // 想法模块
@@ -671,57 +708,85 @@ const thoughtsList = ref([]);
 const isThoughtsLoading = ref(false);
 const hasMoreThoughts = ref(true);
 const lastThoughtsResult = ref(null);
+let thoughtsRequestId = 0;
 
 const getThoughtTitle = (excerpt) => {
     if (!excerpt) return '一个想法';
-    // 取第一行或前30个字符
     const firstLine = excerpt.split('\n')[0].trim();
     return firstLine.length > 30 ? firstLine.substring(0, 30) + '...' : firstLine;
 };
 
+const scheduleThoughtsViewportFill = () => {
+    ensureViewportFilled({
+        key: 'thoughts',
+        selector: '#tab-thoughts .thoughts-scroll-content',
+        canLoadMore: () => (
+            activeTab.value === 'thoughts' &&
+            hasMoreThoughts.value &&
+            !isThoughtsLoading.value
+        ),
+        loadMore: () => fetchThoughtsData(false),
+    });
+};
+
 const fetchThoughtsData = async (isRefresh = false) => {
-    if (isThoughtsLoading.value) return;
+    if (!isRefresh && (isThoughtsLoading.value || !hasMoreThoughts.value)) return;
+
+    const requestId = isRefresh ? ++thoughtsRequestId : thoughtsRequestId;
+
+    if (isRefresh) {
+        lastThoughtsResult.value = null;
+        hasMoreThoughts.value = true;
+        resetViewportFill('thoughts');
+    }
+
     isThoughtsLoading.value = true;
+    let completed = false;
 
     try {
         let res;
         const url = 'https://api.zhihu.com/prague/feed?limit=10';
 
         if (isRefresh || !lastThoughtsResult.value) {
-            // 刷新时，根据section_id构建初始URL
-            res = !lastThoughtsResult.value ? await $http.get(url) : await lastThoughtsResult.value.prev();
+            res = await $http.get(url);
         } else {
             res = await lastThoughtsResult.value.next();
         }
 
-        const rawList = res.data || [];
-        const mappedList = rawList.map(item => {
-            const targetItem = item.target || item;
-            const excerpt = targetItem.excerpt || '';
-            const likes = targetItem.reaction?.statistics?.up_vote_count || 0;
-            const comments = targetItem.reaction?.statistics?.comment_count || 0;
-            const authorName = targetItem.author?.name || '匿名用户';
+        if (requestId !== thoughtsRequestId) return;
 
+        if (!res) {
+            hasMoreThoughts.value = false;
+            completed = true;
+            return;
+        }
+
+        const responseData = res.data;
+        const rawList = Array.isArray(responseData) ? responseData : [];
+        const mappedList = rawList.map(item => {
+            const targetItem = item?.target || item || {};
+            const excerpt = targetItem.excerpt || '';
             let image = '';
-            if (targetItem.images && targetItem.images.length > 0) {
-                image = targetItem.images[0].url;
-            } else if (targetItem.video && targetItem.video.thumbnail) {
+
+            if (Array.isArray(targetItem.images) && targetItem.images.length > 0) {
+                image = targetItem.images[0]?.url || '';
+            } else if (targetItem.video?.thumbnail) {
                 image = targetItem.video.thumbnail;
             }
 
             return {
                 id: targetItem.id,
                 title: getThoughtTitle(excerpt),
-                excerpt: excerpt,
-                image: image,
+                excerpt,
+                image,
                 metrics: {
-                    likes,
-                    comments
+                    likes: targetItem.reaction?.statistics?.up_vote_count || 0,
+                    comments: targetItem.reaction?.statistics?.comment_count || 0
                 },
-                authorName,
+                authorName: targetItem.author?.name || '匿名用户',
                 type: 'pin'
             };
-        });
+        }).filter(item => item.id != null);
 
         if (isRefresh) {
             thoughtsList.value = mappedList;
@@ -730,18 +795,23 @@ const fetchThoughtsData = async (isRefresh = false) => {
         }
 
         lastThoughtsResult.value = res;
-        hasMoreThoughts.value = !res.paging?.is_end;
-
+        hasMoreThoughts.value = hasNextPage(res);
+        completed = true;
     } catch (e) {
-        console.error("Failed to fetch thoughts", e);
+        if (requestId === thoughtsRequestId) {
+            console.error('Failed to fetch thoughts', e);
+        }
     } finally {
-        isThoughtsLoading.value = false;
+        if (requestId === thoughtsRequestId) {
+            isThoughtsLoading.value = false;
+            if (completed) scheduleThoughtsViewportFill();
+        }
     }
 };
 
 const onThoughtsRefresh = async (done) => {
     await fetchThoughtsData(true);
-    done();
+    if (done) done();
 };
 
 const onThoughtsInfinite = () => {
@@ -751,167 +821,409 @@ const onThoughtsInfinite = () => {
 };
 // 想法模块结束
 
-// 使用useUser hook
-const { isLoggedIn, onUserUpdate } = useUser();
+const loadCurrentTabData = (isRefresh) => {
+    if (!activeTab.value) return;
 
-// 订阅事件
+    const dataCheckMap = {
+        recommend: () => (
+            recommendList.value.length > 0 ||
+            Boolean(lastRecommendResult.value) ||
+            isRecommendLoading.value
+        ),
+        hot: () => hotList.value.length > 0 || isHotLoading.value,
+        thoughts: () => (
+            thoughtsList.value.length > 0 ||
+            Boolean(lastThoughtsResult.value) ||
+            isThoughtsLoading.value
+        ),
+        following: () => {
+            const state = momentsTabData[momentsActiveTab.value];
+            return Boolean(
+                state &&
+                (
+                    state.list.length > 0 ||
+                    state.lastResult ||
+                    state.loading
+                )
+            );
+        },
+    };
+
+    if (isRefresh === undefined && dataCheckMap[activeTab.value]?.()) {
+        return;
+    }
+
+    const refresh = isRefresh !== undefined ? isRefresh : true;
+
+    switch (activeTab.value) {
+        case 'recommend':
+            if (hometab.value.length > 0) {
+                fetchRecommendData(refresh);
+            } else {
+                fetchRecommendSections();
+            }
+            break;
+        case 'hot':
+            fetchHotData();
+            break;
+        case 'thoughts':
+            fetchThoughtsData(refresh);
+            break;
+        case 'following':
+            if (isLoggedIn.value) {
+                fetchMomentsData(momentsActiveTab.value, refresh);
+            }
+            break;
+        default:
+            break;
+    }
+};
+
+const ensureActiveTabViewport = () => {
+    switch (activeTab.value) {
+        case 'recommend':
+            scheduleRecommendViewportFill();
+            break;
+        case 'thoughts':
+            scheduleThoughtsViewportFill();
+            break;
+        case 'following':
+            if (isLoggedIn.value) {
+                scheduleMomentsViewportFill(momentsActiveTab.value);
+            }
+            break;
+        default:
+            break;
+    }
+};
+
+watch(activeTab, (newTab, oldTab) => {
+    if (newTab === oldTab) return;
+    loadCurrentTabData();
+    nextTick(ensureActiveTabViewport);
+});
+
+watch(currentSectionIndex, refreshHighlight);
+
+// 使用 useUser hook
+const { isLoggedIn, onUserUpdate } = useUser();
 let unsubscribeUserUpdate = null;
 
-onMounted(() => {
+const handleHomeSettingsChanged = async () => {
+    loadSettings();
+    await fetchRecommendSections();
+    loadCurrentTabData();
+    nextTick(ensureActiveTabViewport);
+};
+
+onMounted(async () => {
     isMobile.value = !f7.device.desktop;
     loadSettings();
-    window.addEventListener('home-settings-changed', loadSettings);
+
+    window.addEventListener('home-settings-changed', handleHomeSettingsChanged);
     window.addEventListener('home-recommendtab-settings-changed', fetchRecommendSections);
 
-    unsubscribeUserUpdate = onUserUpdate((userData) => {
-        if (isLoggedIn.value) {
-            // 登录成功时 主动请求fetchRecommendSections
-            fetchRecommendSections();
+    unsubscribeUserUpdate = onUserUpdate(async () => {
+        if (!isLoggedIn.value) return;
+
+        await fetchRecommendSections();
+
+        // 如果登录发生在“关注”页，登录提示消失后立即加载当前关注流。
+        if (activeTab.value === 'following') {
+            fetchMomentsData(momentsActiveTab.value, true);
         }
     });
 
-    nextTick(() => {
-        if (!isMobile.value) f7.toolbar.setHighlight('.desktop-home-toolbar');
-    });
-
+    await fetchRecommendSections();
     loadCurrentTabData();
+
+    nextTick(() => {
+        if (!isMobile.value) {
+            f7.toolbar.setHighlight('.desktop-home-toolbar');
+        }
+        ensureActiveTabViewport();
+    });
 });
 
-// 在组件卸载时取消订阅
 onUnmounted(() => {
-    window.removeEventListener('home-settings-changed', loadSettings);
+    window.removeEventListener('home-settings-changed', handleHomeSettingsChanged);
     window.removeEventListener('home-recommendtab-settings-changed', fetchRecommendSections);
-    if (unsubscribeUserUpdate) {
-        unsubscribeUserUpdate();
-    }
+    if (unsubscribeUserUpdate) unsubscribeUserUpdate();
 });
-
-// 监听推荐section索引变化，刷新高亮
-watch(currentSectionIndex, refreshHighlight);
 </script>
 
 <template>
-    <!-- 不使用:page-content='false' 使用后处理双重tab较麻烦 -->
-    <f7-page name="home" :page-content="false">
-        <!-- Using TopBar here -->
+    <f7-page name="home" :page-content="false" :class="{ 'home-mobile': isMobile }">
         <template #fixed>
             <TopBar :f7router="f7router" />
 
-            <!-- Desktop Tabbar -->
             <f7-toolbar tabbar top class="desktop-home-toolbar" v-if="!isMobile">
-                <f7-link v-for="tab in enabledTabs" :key="tab.id" :tab-link="`#tab-${tab.id}`"
-                    :tab-link-active="activeTab === tab.id" @click="activeTab = tab.id">
+                <f7-link
+                    v-for="tab in enabledTabs"
+                    :key="tab.id"
+                    :tab-link="`#tab-${tab.id}`"
+                    :tab-link-active="activeTab === tab.id"
+                    @click="activeTab = tab.id"
+                >
                     {{ tab.label }}
                 </f7-link>
             </f7-toolbar>
         </template>
 
-        <f7-tabs class="tabs-auto-page-content" animated>
-            <f7-tab id="tab-recommend" :tab-active="activeTab === 'recommend'"
-                v-if="enabledTabs.some(t => t.id === 'recommend')">
-                <!-- 推荐section tabs -->
-                <f7-toolbar tabbar top class="recommend-section-tabs tab-bar-static"
-                    v-if="isLoggedIn && selectedSections.length > 0">
-                    <f7-link v-for="(section, index) in selectedSections" :key="index"
-                        :tab-link="`#tab-${section.section_id}`" :tab-link-active="currentSectionIndex === index"
-                        @click="handleTabSelected(index)">
-                        {{ section.section_name }}
-                    </f7-link>
-                </f7-toolbar>
+        <f7-tabs class="home-main-tabs" animated>
+            <f7-tab
+                id="tab-recommend"
+                :tab-active="activeTab === 'recommend'"
+                v-if="enabledTabs.some(t => t.id === 'recommend')"
+            >
+                <div class="home-tab-shell">
+                    <f7-toolbar
+                        tabbar
+                        top
+                        class="recommend-section-tabs tab-bar-static"
+                        v-if="isLoggedIn && selectedSections.length > 0"
+                    >
+                        <f7-link
+                            v-for="(section, index) in selectedSections"
+                            :key="`${section.section_id}-${index}`"
+                            :class="{ 'tab-link-active': currentSectionIndex === index }"
+                            @click="handleTabSelected(index)"
+                        >
+                            {{ section.section_name }}
+                        </f7-link>
+                    </f7-toolbar>
 
-                <!-- 单个page-content，tab切换只更新内容 -->
-                <f7-page-content ptr @ptr:refresh="onRecommendRefresh" infinite @infinite="onRecommendInfinite"
-                    :style="{ 'padding-bottom': isLoggedIn ? 'var(--f7-toolbar-height)' : '' }">
-                    <div class="card-grid">
-                        <FeedCard class="masonry-item" v-for="(item, idx) in recommendList" :key="idx" :item="item"
-                            @click="$handleCardClick(f7router, item)" />
-                    </div>
-                    <div class="load-more block text-align-center" v-if="!hasMoreRecommend && recommendList.length > 0">
-                        <span class="text-color-gray">没有更多内容了</span>
-                    </div>
-                </f7-page-content>
-            </f7-tab>
+                    <f7-page-content
+                        class="home-scroll-content recommend-scroll-content"
+                        ptr
+                        @ptr:refresh="onRecommendRefresh"
+                        infinite
+                        :infinite-preloader="isRecommendLoading && hasMoreRecommend"
+                        @infinite="onRecommendInfinite"
+                    >
+                        <div class="card-grid">
+                            <FeedCard
+                                class="masonry-item"
+                                v-for="(item, idx) in recommendList"
+                                :key="`${item.type}-${item.id ?? idx}-${idx}`"
+                                :item="item"
+                                @click="$handleCardClick(f7router, item)"
+                            />
+                        </div>
 
-            <f7-tab id="tab-following" :tab-active="activeTab === 'following'"
-                v-if="enabledTabs.some(t => t.id === 'following')">
-                <!-- 未登录提示 -->
-                <div v-if="!isLoggedIn" class="empty-state" style="padding: 40px 20px;">
-                    <f7-icon f7="person" size="48" color="gray" />
-                    <p style="margin: 16px 0;">不登录无法加载数据</p>
-                    <f7-button fill color="primary" @click="() => {
-                        f7.dialog.alert('请点击主页右上角登录');
-                    }">
-                        去登录
-                    </f7-button>
+                        <div
+                            class="load-more block text-align-center"
+                            v-if="!hasMoreRecommend && recommendList.length > 0"
+                        >
+                            <span class="text-color-gray">没有更多内容了</span>
+                        </div>
+
+                        <div
+                            v-if="!isRecommendLoading && recommendList.length === 0"
+                            class="empty-state"
+                        >
+                            <f7-icon f7="tray" size="48" color="gray" />
+                            <p>暂无推荐内容</p>
+                        </div>
+                    </f7-page-content>
                 </div>
-                <!-- 已登录内容 -->
-                <TabLayout v-else :tabs="momentsTabs" :onChange="(id) => handleMomentsTabChange(id)" :nested="true"
-                    :autoPageContent="false" :fixed="false" :initialActiveId="momentsActiveTab">
-                    <template v-for="tab in momentsTabs" :key="tab.id" #[tab.id]>
-                        <f7-page-content ptr @ptr:refresh="(done) => onMomentsRefresh(tab.id, done)" infinite
-                            @infinite="onMomentsInfinite(tab.id)" class="moments-scroll-content">
-                            <div class="moments-list">
-
-
-                                <template v-for="(item, index) in momentsTabData[tab.id].list" :key="index">
-                                    <!-- 推荐关注卡片列表，处理recommend_user_card_list类型 -->
-                                    <RecommendUserCardList v-if="item.type === 'recommend_user_card_list'" :item="item"
-                                        @remove="(removedItem) => handleRemoveRecommendUserCardList(tab.id, removedItem)"
-                                        @click="(item) => handleAuthorClick(f7router, item)" />
-
-                                    <!-- 普通卡片和折叠组卡片 -->
-                                    <MomentListCard v-else :item="item" @click="$handleCardClick(f7router, $event)" />
-                                </template>
-
-                                <div v-if="!momentsTabData[tab.id].hasMore && momentsTabData[tab.id].list.length > 0"
-                                    class="padding text-align-center text-color-gray">
-                                    没有更多内容了
-                                </div>
-
-                                <div v-if="!momentsTabData[tab.id].loading && momentsTabData[tab.id].list.length === 0"
-                                    class="empty-state">
-                                    <f7-icon f7="tray" size="48" color="gray" />
-                                    <p>暂无动态</p>
-                                </div>
-                            </div>
-                        </f7-page-content>
-                    </template>
-                </TabLayout>
             </f7-tab>
 
-            <f7-tab id="tab-hot" :tab-active="activeTab === 'hot'" v-if="enabledTabs.some(t => t.id === 'hot')">
-                <f7-page-content ptr @ptr:refresh="onHotRefresh">
-                    <f7-list media-list no-hairlines class="hot-list">
-                        <HotListCard v-for="(item, index) in hotList" :key="item.id" :item="item" :rank="index + 1"
-                            @click="handleHotListCardClick(f7router, item)" />
-                    </f7-list>
-                </f7-page-content>
-            </f7-tab>
-
-            <f7-tab id="tab-thoughts" :tab-active="activeTab === 'thoughts'"
-                v-if="enabledTabs.some(t => t.id === 'thoughts')">
-                <f7-page-content ptr @ptr:refresh="onThoughtsRefresh" infinite @infinite="onThoughtsInfinite">
-                    <div class="card-grid">
-                        <FeedCard class="masonry-item" v-for="(item, index) in thoughtsList" :key="index" :item="item"
-                            @click="$handleCardClick(f7router, item)" />
+            <f7-tab
+                id="tab-following"
+                :tab-active="activeTab === 'following'"
+                v-if="enabledTabs.some(t => t.id === 'following')"
+            >
+                <div class="home-tab-shell">
+                    <div v-if="!isLoggedIn" class="empty-state following-login-state">
+                        <f7-icon f7="person" size="48" color="gray" />
+                        <p>不登录无法加载数据</p>
+                        <f7-button fill color="primary" @click="f7.dialog.alert('请点击主页右上角登录')">
+                            去登录
+                        </f7-button>
                     </div>
-                </f7-page-content>
+
+                    <TabLayout
+                        v-else
+                        class="home-following-layout"
+                        :tabs="momentsTabs"
+                        :onChange="handleMomentsTabChange"
+                        :nested="true"
+                        :autoPageContent="false"
+                        :fixed="false"
+                        :initialActiveId="momentsActiveTab"
+                    >
+                        <template v-for="tab in momentsTabs" :key="tab.id" #[tab.id]>
+                            <f7-page-content
+                                ptr
+                                @ptr:refresh="(done) => onMomentsRefresh(tab.id, done)"
+                                infinite
+                                :infinite-preloader="momentsTabData[tab.id].loading && momentsTabData[tab.id].hasMore"
+                                @infinite="onMomentsInfinite(tab.id)"
+                                class="moments-scroll-content"
+                                :data-feed-tab="tab.id"
+                            >
+                                <div class="moments-list">
+                                    <template v-for="(item, index) in momentsTabData[tab.id].list" :key="index">
+                                        <RecommendUserCardList
+                                            v-if="item.type === 'recommend_user_card_list'"
+                                            :item="item"
+                                            @remove="(removedItem) => handleRemoveRecommendUserCardList(tab.id, removedItem)"
+                                            @click="(item) => handleAuthorClick(f7router, item)"
+                                        />
+                                        <MomentListCard
+                                            v-else
+                                            :item="item"
+                                            @click="$handleCardClick(f7router, $event)"
+                                        />
+                                    </template>
+
+                                    <div
+                                        v-if="!momentsTabData[tab.id].hasMore && momentsTabData[tab.id].list.length > 0"
+                                        class="padding text-align-center text-color-gray"
+                                    >
+                                        没有更多内容了
+                                    </div>
+
+                                    <div
+                                        v-if="!momentsTabData[tab.id].loading && momentsTabData[tab.id].list.length === 0"
+                                        class="empty-state"
+                                    >
+                                        <f7-icon f7="tray" size="48" color="gray" />
+                                        <p>暂无动态</p>
+                                    </div>
+                                </div>
+                            </f7-page-content>
+                        </template>
+                    </TabLayout>
+                </div>
+            </f7-tab>
+
+            <f7-tab
+                id="tab-hot"
+                :tab-active="activeTab === 'hot'"
+                v-if="enabledTabs.some(t => t.id === 'hot')"
+            >
+                <div class="home-tab-shell">
+                    <f7-page-content class="home-scroll-content" ptr @ptr:refresh="onHotRefresh">
+                        <f7-list media-list no-hairlines class="hot-list">
+                            <HotListCard
+                                v-for="(item, index) in hotList"
+                                :key="item.id"
+                                :item="item"
+                                :rank="index + 1"
+                                @click="handleHotListCardClick(f7router, item)"
+                            />
+                        </f7-list>
+
+                        <div v-if="!isHotLoading && hotList.length === 0" class="empty-state">
+                            <f7-icon f7="tray" size="48" color="gray" />
+                            <p>暂无热榜内容</p>
+                        </div>
+                    </f7-page-content>
+                </div>
+            </f7-tab>
+
+            <f7-tab
+                id="tab-thoughts"
+                :tab-active="activeTab === 'thoughts'"
+                v-if="enabledTabs.some(t => t.id === 'thoughts')"
+            >
+                <div class="home-tab-shell">
+                    <f7-page-content
+                        class="home-scroll-content thoughts-scroll-content"
+                        ptr
+                        @ptr:refresh="onThoughtsRefresh"
+                        infinite
+                        :infinite-preloader="isThoughtsLoading && hasMoreThoughts"
+                        @infinite="onThoughtsInfinite"
+                    >
+                        <div class="card-grid">
+                            <FeedCard
+                                class="masonry-item"
+                                v-for="(item, index) in thoughtsList"
+                                :key="`${item.id ?? index}-${index}`"
+                                :item="item"
+                                @click="$handleCardClick(f7router, item)"
+                            />
+                        </div>
+
+                        <div
+                            class="load-more block text-align-center"
+                            v-if="!hasMoreThoughts && thoughtsList.length > 0"
+                        >
+                            <span class="text-color-gray">没有更多内容了</span>
+                        </div>
+
+                        <div v-if="!isThoughtsLoading && thoughtsList.length === 0" class="empty-state">
+                            <f7-icon f7="tray" size="48" color="gray" />
+                            <p>暂无想法</p>
+                        </div>
+                    </f7-page-content>
+                </div>
             </f7-tab>
         </f7-tabs>
 
-        <!-- Mobile Tabbar -->
-        <f7-toolbar tabbar bottom icons v-if="isMobile">
+        <f7-toolbar tabbar bottom icons v-if="isMobile" class="mobile-home-toolbar">
             <f7-toolbar-pane>
-                <f7-link v-for="tab in enabledTabs" :key="tab.id" :tab-link="`#tab-${tab.id}`"
-                    :tab-link-active="activeTab === tab.id" @click="activeTab = tab.id" :icon-ios="tab.iosIcon"
-                    :icon-md="tab.mdIcon" :text="tab.label"></f7-link>
+                <f7-link
+                    v-for="tab in enabledTabs"
+                    :key="tab.id"
+                    :tab-link="`#tab-${tab.id}`"
+                    :tab-link-active="activeTab === tab.id"
+                    @click="activeTab = tab.id"
+                    :icon-ios="tab.iosIcon"
+                    :icon-md="tab.mdIcon"
+                    :text="tab.label"
+                />
             </f7-toolbar-pane>
         </f7-toolbar>
-
     </f7-page>
 </template>
 
 <style scoped>
+/*
+ * HomeView 使用多个独立滚动区域，因此关闭 f7-page 自动 page-content。
+ * 每个主 Tab 用 home-tab-shell 自己处理固定 Navbar / 顶部 Tabbar 的占位，
+ * 这样实际滚动元素始终是内部 f7-page-content，Infinite Scroll 监听对象正确。
+ */
+.home-tab-shell {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    /* 桌面端固定 Navbar + 顶部主 Tabbar 都不占普通文档流，显式留出它们的高度。 */
+    padding-top: calc(
+        var(--f7-navbar-height) +
+        var(--f7-safe-area-top) +
+        var(--f7-toolbar-height)
+    );
+}
+
+/* 移动端没有顶部主 Tabbar，但有底部图标 Tabbar。 */
+:global(.home-mobile) .home-tab-shell {
+    padding-top: calc(var(--f7-navbar-height) + var(--f7-safe-area-top));
+    padding-bottom: calc(var(--f7-tabbar-icons-height) + var(--f7-safe-area-bottom));
+}
+
+/* 真正的滚动容器。外层 shell 已经处理固定栏 offset，因此这里不再重复 padding。 */
+.home-scroll-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+/* 关注页内部 TabLayout 也必须限制在 shell 的剩余高度中。 */
+.home-following-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto !important;
+}
+
 .card-grid {
     padding: 16px;
     column-count: 1;
@@ -942,11 +1254,14 @@ watch(currentSectionIndex, refreshHighlight);
     margin-top: 0;
     margin-bottom: 0;
     padding-bottom: 80px;
-    background: #fff;
+    background: var(--f7-page-bg-color);
 }
 
+/* TabLayout 已经把内部 tabs 限制在剩余高度；这里保留一个真正的 100% 滚动容器。 */
 .moments-scroll-content {
-    height: 100%;
+    height: 100% !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
 }
 
 .moments-list {
@@ -956,13 +1271,18 @@ watch(currentSectionIndex, refreshHighlight);
 .empty-state {
     padding: 100px 32px;
     text-align: center;
-    color: #999;
+    color: var(--f7-card-footer-text-color, var(--f7-text-color));
 }
 
-/* 推荐section tabs样式，参考历史页tabs设计 */
+.following-login-state {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
 .recommend-section-tabs {
-    --f7-toolbar-background-color: #fff;
+    --f7-toolbar-bg-color: var(--f7-bars-bg-color);
     z-index: 100;
+    flex: 0 0 var(--f7-toolbar-height);
     margin-bottom: 0;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.1);
 }
