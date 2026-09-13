@@ -156,6 +156,10 @@ if (
     errors.append("src/components/CommentsSheet.vue: weak paging remains")
 
 home = read("src/components/home/HomeView.vue")
+if ':global(.home-mobile) .home-tab-shell' in home:
+    errors.append("src/components/home/HomeView.vue: malformed scoped :global selector remains")
+if ':global(.home-mobile .home-tab-shell)' not in home:
+    errors.append("src/components/home/HomeView.vue: scoped mobile selector missing")
 for token in [
     "initDynamicHomeScrollFeatures",
     "ensureViewportFilled",
@@ -167,6 +171,14 @@ for token in [
 ]:
     if token in home:
         errors.append(f"src/components/home/HomeView.vue: redundant local scroll helper remains: {token}")
+
+# In Vue <style scoped>, :global(...) replaces the full selector. A descendant
+# written after :global(...) can collapse the rule onto the global ancestor.
+malformed_scoped_global = re.compile(r":global\([^\n)]+\)\s+[.#[:a-zA-Z]")
+for vue_path in sorted((ROOT / "src").rglob("*.vue")):
+    vue_text = vue_path.read_text(encoding="utf-8")
+    if malformed_scoped_global.search(vue_text):
+        errors.append(f"{vue_path.relative_to(ROOT)}: malformed scoped :global descendant selector remains")
 
 sync = read("deploy/sync-upstream.sh")
 for token, label in [

@@ -471,6 +471,10 @@ def patch_home_cleanup():
     text = re.sub(r"\n\s*// 登录后“关注”页[^\n]*", "", text)
     text = re.sub(r"\n\s*// 如果登录发生[^\n]*", "", text)
     text = re.sub(r"(if \(state\.list\.length === 0\) \{\n\s*if \(!state\.loading\) fetchMomentsData\(tabId, true\);\n\s*\}) else \{\n\s*\}", r"\1", text, count=1)
+    text = text.replace(
+        ':global(.home-mobile) .home-tab-shell {',
+        ':global(.home-mobile .home-tab-shell) {',
+    )
     write(rel, text)
 
 

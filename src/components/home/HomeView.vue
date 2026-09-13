@@ -1086,7 +1086,7 @@ onUnmounted(() => {
     );
 }
 
-:global(.home-mobile) .home-tab-shell {
+:global(.home-mobile .home-tab-shell) {
     padding-top: calc(var(--f7-navbar-height) + var(--f7-safe-area-top));
     padding-bottom: calc(var(--f7-tabbar-icons-height) + var(--f7-safe-area-bottom));
 }

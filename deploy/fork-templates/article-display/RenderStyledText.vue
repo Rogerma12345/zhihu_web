@@ -240,8 +240,8 @@ const parts = computed(() => {
   border-radius: 2px;
 }
 
-:global(.dark) .styled-formula-image,
-:global(html.dark) .styled-formula-image {
+:global(.dark .styled-formula-image),
+:global(html.dark .styled-formula-image) {
   filter: invert(1) hue-rotate(180deg);
   mix-blend-mode: difference;
 }

@@ -299,8 +299,8 @@ async function copyCode() {
   --code-punctuation: #6a737d;
 }
 
-:global(.dark) .code-block-renderer,
-:global(html.dark) .code-block-renderer {
+:global(.dark .code-block-renderer),
+:global(html.dark .code-block-renderer) {
   --code-comment: #7f848e;
   --code-keyword: #c678dd;
   --code-string: #98c379;

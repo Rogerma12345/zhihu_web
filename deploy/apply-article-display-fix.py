@@ -151,15 +151,15 @@ def patch_article_detail() -> None:
 
     deep_styles = '''
 
-:global(.dark) .bottom-float-container,
-:global(html.dark) .bottom-float-container {
+:global(.dark .bottom-float-container),
+:global(html.dark .bottom-float-container) {
   background: color-mix(in srgb, var(--f7-bars-bg-color, #202020) 96%, transparent);
   border-color: var(--f7-bars-border-color, rgba(255, 255, 255, 0.14));
   color: var(--f7-bars-text-color, var(--f7-text-color, rgba(255, 255, 255, 0.87)));
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
 }
 '''
-    if ':global(.dark) .bottom-float-container' not in text:
+    if ':global(.dark .bottom-float-container)' not in text:
         style_close = text.rfind('</style>')
         if style_close == -1:
             raise RuntimeError(f'{rel}: </style> not found')
@@ -487,7 +487,7 @@ def _v2_patch_article_detail(rel: str='src/components/ArticleDetail.vue') -> Non
     if 'color:' not in fbody:
         fbody += '\n    color: var(--f7-text-color, CanvasText);'
     text = text[:float_match.start()] + float_match.group(1) + fbody + float_match.group(3) + text[float_match.end():]
-    text = re.sub('\\n:global\\(\\.dark\\) \\.bottom-float-container,\\s*\\n:global\\(html\\.dark\\) \\.bottom-float-container\\s*\\{.*?\\}\\s*\\n', '\n', text, flags=re.S)
+    text = re.sub(r'\n(?::global\(\.dark\) \.bottom-float-container|:global\(\.dark \.bottom-float-container\)),\s*\n(?::global\(html\.dark\) \.bottom-float-container|:global\(html\.dark \.bottom-float-container\))\s*\{.*?\}\s*\n', '\n', text, flags=re.S)
     _v2_write(rel, text)
 
 def _v2_patch_enhanced_renderer(rel: str) -> None:
@@ -537,6 +537,10 @@ def _v2_patch_reference_renderer(rel: str) -> None:
 def _v2_patch_render_styled_text(rel: str) -> None:
     text = _v2_read(rel)
     text = text.replace('mix-blend-mode: screen;', 'mix-blend-mode: difference;')
+    text = text.replace(
+        ':global(.dark) .styled-formula-image,\n:global(html.dark) .styled-formula-image {',
+        ':global(.dark .styled-formula-image),\n:global(html.dark .styled-formula-image) {',
+    )
     _v2_write(rel, text)
 
 def _v2_patch_theme_fallbacks(rel: str) -> None:
@@ -546,6 +550,10 @@ def _v2_patch_theme_fallbacks(rel: str) -> None:
     text = _v2_read(rel)
     text = text.replace('var(--f7-page-bg-color, #fff)', 'var(--app-surface-bg, Canvas)')
     text = text.replace('var(--f7-text-color, #111)', 'var(--f7-text-color, CanvasText)')
+    text = text.replace(
+        ':global(.dark) .code-block-renderer,\n:global(html.dark) .code-block-renderer {',
+        ':global(.dark .code-block-renderer),\n:global(html.dark .code-block-renderer) {',
+    )
     _v2_write(rel, text)
 
 def _v2_patch_template_copies() -> None:

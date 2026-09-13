@@ -167,10 +167,29 @@ def _verify_v2() -> None:
             errors.append('RenderStyledText.vue: formula screen blending remains')
         if 'mix-blend-mode: difference' not in styled:
             errors.append('RenderStyledText.vue: adaptive formula blending missing')
+        if ':global(.dark) .styled-formula-image' in styled or ':global(html.dark) .styled-formula-image' in styled:
+            errors.append('RenderStyledText.vue: malformed scoped :global selector would target the dark root')
+        if ':global(.dark .styled-formula-image)' not in styled:
+            errors.append('RenderStyledText.vue: scoped dark formula selector missing')
+
+    code_renderer = _v2_get('src/components/CodeBlockRenderer.vue')
+    if code_renderer:
+        if ':global(.dark) .code-block-renderer' in code_renderer or ':global(html.dark) .code-block-renderer' in code_renderer:
+            errors.append('CodeBlockRenderer.vue: malformed scoped :global selector remains')
+        if ':global(.dark .code-block-renderer)' not in code_renderer:
+            errors.append('CodeBlockRenderer.vue: scoped dark code selector missing')
     for rel in ['src/components/CodeBlockRenderer.vue', 'src/components/ReferenceBlockRenderer.vue', 'src/components/UnknownSegmentRenderer.vue']:
         text = _v2_get(rel)
         if text and ('var(--f7-page-bg-color, #fff)' in text or 'var(--f7-text-color, #111)' in text):
             errors.append(f'{rel}: hard-coded light theme fallbacks remain')
+
+    template_styled = _v2_get('deploy/fork-templates/article-display/RenderStyledText.vue')
+    if template_styled and (':global(.dark) .styled-formula-image' in template_styled or ':global(html.dark) .styled-formula-image' in template_styled):
+        errors.append('RenderStyledText template: malformed scoped :global selector remains')
+
+    template_code = _v2_get('deploy/fork-templates/article-display/CodeBlockRenderer.vue')
+    if template_code and (':global(.dark) .code-block-renderer' in template_code or ':global(html.dark) .code-block-renderer' in template_code):
+        errors.append('CodeBlockRenderer template: malformed scoped :global selector remains')
 
     permanent_apply = require_file('deploy/apply-article-display-fix.py')
     if '# BEGIN article display v2 integrated' not in permanent_apply or '_v2_patch_search_page()' not in permanent_apply:
