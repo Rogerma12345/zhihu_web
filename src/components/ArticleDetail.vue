@@ -493,7 +493,11 @@ const triggerScreenshotDownload = (blob) => {
     const link = document.createElement('a');
     link.href = downloadUrl;
     link.download = `zhihu-${type || 'content'}-${id || 'export'}.png`;
+    link.classList.add('external', 'prevent-router');
     link.style.display = 'none';
+    link.addEventListener('click', (event) => {
+        event.stopPropagation();
+    }, { once: true });
     document.body.appendChild(link);
     link.click();
     link.remove();

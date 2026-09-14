@@ -208,6 +208,8 @@ def _verify_screenshot_export() -> None:
             'const canvasToPngBlob = (canvas) =>': 'Blob PNG encoder missing',
             'const triggerScreenshotDownload = (blob) =>': 'browser download handler missing',
             "link.download = `zhihu-${type || 'content'}-${id || 'export'}.png`;": 'download filename missing',
+            "link.classList.add('external', 'prevent-router');": 'Framework7 router bypass classes missing',
+            'event.stopPropagation();': 'download click propagation guard missing',
             'onclone: (clonedDocument) =>': 'clone theme handling missing',
             'backgroundColor: captureBackground': 'dynamic screenshot background missing',
             "imageTimeout: SCREENSHOT_RESOURCE_TIMEOUT": 'image timeout missing',
@@ -232,6 +234,10 @@ def _verify_screenshot_export() -> None:
             errors.append('ArticleDetailScreenshot.js: dynamic background handling missing')
         if 'triggerScreenshotDownload' not in template:
             errors.append('ArticleDetailScreenshot.js: download handler missing')
+        if "link.classList.add('external', 'prevent-router');" not in template:
+            errors.append('ArticleDetailScreenshot.js: Framework7 router bypass classes missing')
+        if 'event.stopPropagation();' not in template:
+            errors.append('ArticleDetailScreenshot.js: download click propagation guard missing')
 
     package = _v2_get('package.json')
     if package and '"html2canvas-pro": "2.4.2"' not in package:
