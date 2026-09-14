@@ -289,7 +289,13 @@ const fetchContent = async (tabId, isRefresh = false) => {
                             title = "一个想法";
                         }
                         actionName = actionName || "发布了想法";
-                        excerpt = item.content_html || "";
+                        const pinText = Array.isArray(targetItem.content)
+                            ? targetItem.content
+                                .filter(part => part?.type === "text" && part?.content)
+                                .map(part => part.content)
+                                .join("\n")
+                            : "";
+                        excerpt = targetItem.content_html || pinText || targetItem.excerpt || "";
                         break;
 
                     case "article":
@@ -439,7 +445,7 @@ const toggleFollow = async () => {
             userInfo.value.metrics.follower++;
         } else {
             const currentUserId = currentUser.value?.id || 'self';
-            await $http.delete(`${url}/${currentUserId}`, "", { encryptHead: true });
+            await $http.delete(`${url}/${currentUserId}`, "", { encryptHead: true, encryptBody: false });
             f7.toast.show({ text: '已取消关注' });
             userInfo.value.isFollowing = false;
             userInfo.value.metrics.follower--;
