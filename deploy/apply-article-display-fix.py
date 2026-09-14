@@ -254,6 +254,60 @@ def patch_screenshot_dependency() -> None:
     write(lock_rel, lock_text)
 
 
+
+def patch_screenshot_csp() -> None:
+    """Allow Blob-backed screenshot previews without broadening Blob access for other resource types."""
+    for rel in ('src/index.html', 'html/index.html'):
+        path = ROOT / rel
+        if not path.exists():
+            if rel == 'src/index.html':
+                raise RuntimeError(f'missing file: {rel}')
+            continue
+
+        text = read(rel)
+        meta_pattern = re.compile(
+            r'(?P<prefix><meta\s+http-equiv=["\']Content-Security-Policy["\'][^>]*?content=)(?P<quote>["\'])(?P<policy>.*?)(?P=quote)',
+            re.I | re.S,
+        )
+        match = meta_pattern.search(text)
+        if not match:
+            raise RuntimeError(f'{rel}: Content-Security-Policy meta tag not found')
+
+        directives = [part.strip() for part in match.group('policy').split(';') if part.strip()]
+        img_src_index = None
+        default_sources = []
+        for index, directive in enumerate(directives):
+            tokens = directive.split()
+            if not tokens:
+                continue
+            name = tokens[0].lower()
+            if name == 'img-src':
+                img_src_index = index
+            elif name == 'default-src':
+                default_sources = tokens[1:]
+
+        if img_src_index is None:
+            inherited_sources = [
+                source for source in default_sources
+                if source not in {"'unsafe-inline'", "'unsafe-eval'", "'none'"}
+            ]
+            if not inherited_sources:
+                inherited_sources = ["'self'"]
+            if 'blob:' not in inherited_sources:
+                inherited_sources.append('blob:')
+            directives.append('img-src ' + ' '.join(inherited_sources))
+        else:
+            tokens = directives[img_src_index].split()
+            sources = [source for source in tokens[1:] if source != "'none'"]
+            if 'blob:' not in sources:
+                sources.append('blob:')
+            directives[img_src_index] = 'img-src ' + ' '.join(sources or ["'self'", 'blob:'])
+
+        policy = '; '.join(directives)
+        replacement = match.group('prefix') + match.group('quote') + policy + match.group('quote')
+        text = text[:match.start()] + replacement + text[match.end():]
+        write(rel, text)
+
 def ensure_plain_text_import(text: str, rel: str) -> str:
     import_line = "import { htmlToPlainText } from '../utils/content-text.js';"
     if import_line in text:
@@ -729,6 +783,7 @@ def main() -> None:
     _v2_patch_article_detail()
     patch_screenshot_export()
     patch_screenshot_dependency()
+    patch_screenshot_csp()
     _v2_patch_enhanced_renderer('src/components/EnhancedContentRenderer.vue')
     _v2_patch_content_renderer()
     _v2_patch_reference_renderer('src/components/ReferenceBlockRenderer.vue')

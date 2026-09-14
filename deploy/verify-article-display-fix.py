@@ -261,8 +261,38 @@ def _verify_screenshot_export() -> None:
             errors.append('deploy/apply-article-display-fix.py: screenshot patch is not invoked')
 
 
+
+def _verify_screenshot_csp() -> None:
+    source_index = _v2_get('src/index.html')
+    if source_index:
+        meta_match = re.search(
+            r'<meta\s+http-equiv=(?P<csp_quote>["\'])Content-Security-Policy(?P=csp_quote)[^>]*?content=(?P<content_quote>["\'])(?P<policy>.*?)(?P=content_quote)',
+            source_index,
+            re.I | re.S,
+        )
+        if not meta_match:
+            errors.append('src/index.html: Content-Security-Policy meta tag missing')
+        else:
+            policy = meta_match.group('policy')
+            img_src = next(
+                (part.strip() for part in policy.split(';') if part.strip().lower().startswith('img-src ')),
+                '',
+            )
+            if not img_src:
+                errors.append('src/index.html: img-src directive missing from Content-Security-Policy')
+            elif 'blob:' not in img_src.split():
+                errors.append('src/index.html: img-src does not allow blob: screenshot previews')
+
+    apply_script = _v2_get('deploy/apply-article-display-fix.py')
+    if apply_script:
+        if 'def patch_screenshot_csp() -> None:' not in apply_script:
+            errors.append('deploy/apply-article-display-fix.py: screenshot CSP patch missing')
+        if 'patch_screenshot_csp()' not in apply_script:
+            errors.append('deploy/apply-article-display-fix.py: screenshot CSP patch is not invoked')
+
 _verify_v2()
 _verify_screenshot_export()
+_verify_screenshot_csp()
 if errors:
     print('article display fix verification failed:', file=sys.stderr)
     for error in errors:
