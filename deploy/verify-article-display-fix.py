@@ -196,7 +196,73 @@ def _verify_v2() -> None:
         errors.append('deploy/apply-article-display-fix.py: integrated v2 apply pass missing')
 # END article display v2 verification integrated
 
+
+def _verify_screenshot_export() -> None:
+    article = _v2_get('src/components/ArticleDetail.vue')
+    if article:
+        required_markers = {
+            '// BEGIN fork screenshot export': 'managed screenshot block missing',
+            'const prepareCaptureResources = async': 'resource preparation missing',
+            'const resolveCaptureBackground = (element) =>': 'theme background resolver missing',
+            'const calculateCaptureScale = (width, height) =>': 'canvas limit handling missing',
+            'const canvasToPngBlob = (canvas) =>': 'Blob PNG encoder missing',
+            'const triggerScreenshotDownload = (blob) =>': 'browser download handler missing',
+            "link.download = `zhihu-${type || 'content'}-${id || 'export'}.png`;": 'download filename missing',
+            'onclone: (clonedDocument) =>': 'clone theme handling missing',
+            'backgroundColor: captureBackground': 'dynamic screenshot background missing',
+            "imageTimeout: SCREENSHOT_RESOURCE_TIMEOUT": 'image timeout missing',
+        }
+        for needle, label in required_markers.items():
+            if needle not in article:
+                errors.append(f'ArticleDetail.vue: {label}')
+        for forbidden, label in [
+            ("backgroundColor: '#ffffff'", 'hard-coded white screenshot background remains'),
+            ("canvas.toDataURL('image/png'", 'base64 screenshot preview remains'),
+            ("window.open(url, '_blank')", 'Blob popup save path remains'),
+            ("f7.toast.show({ text: '截图已保存' })", 'premature saved-state toast remains'),
+        ]:
+            if forbidden in article:
+                errors.append(f'ArticleDetail.vue: {label}')
+
+    template = _v2_get('deploy/fork-templates/article-display/ArticleDetailScreenshot.js')
+    if template:
+        if '// BEGIN fork screenshot export' not in template or '// END fork screenshot export' not in template:
+            errors.append('ArticleDetailScreenshot.js: managed markers missing')
+        if "backgroundColor: captureBackground" not in template:
+            errors.append('ArticleDetailScreenshot.js: dynamic background handling missing')
+        if 'triggerScreenshotDownload' not in template:
+            errors.append('ArticleDetailScreenshot.js: download handler missing')
+
+    package = _v2_get('package.json')
+    if package and '"html2canvas-pro": "2.4.2"' not in package:
+        errors.append('package.json: html2canvas-pro must be pinned to 2.4.2')
+
+    lock = _v2_get('package-lock.json')
+    if lock:
+        if '"html2canvas-pro": "2.4.2"' not in lock:
+            errors.append('package-lock.json: root html2canvas-pro version is not 2.4.2')
+        package_block = re.search(r'"node_modules/html2canvas-pro"\s*:\s*\{(.*?)\n\s*\}', lock, re.S)
+        if not package_block:
+            errors.append('package-lock.json: html2canvas-pro package block missing')
+        else:
+            body = package_block.group(1)
+            if '"version": "2.4.2"' not in body:
+                errors.append('package-lock.json: installed html2canvas-pro version is not 2.4.2')
+            if 'html2canvas-pro-2.4.2.tgz' not in body:
+                errors.append('package-lock.json: html2canvas-pro 2.4.2 tarball missing')
+
+    apply_script = _v2_get('deploy/apply-article-display-fix.py')
+    if apply_script:
+        if 'def patch_screenshot_export()' not in apply_script:
+            errors.append('deploy/apply-article-display-fix.py: screenshot export patch missing')
+        if 'def patch_screenshot_dependency()' not in apply_script:
+            errors.append('deploy/apply-article-display-fix.py: screenshot dependency patch missing')
+        if 'patch_screenshot_export()' not in apply_script or 'patch_screenshot_dependency()' not in apply_script:
+            errors.append('deploy/apply-article-display-fix.py: screenshot patch is not invoked')
+
+
 _verify_v2()
+_verify_screenshot_export()
 if errors:
     print('article display fix verification failed:', file=sys.stderr)
     for error in errors:

@@ -5,6 +5,9 @@ import sys
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else '.').resolve()
 TEMPLATE_DIR = ROOT / 'deploy' / 'fork-templates' / 'article-display'
+SCREENSHOT_TEMPLATE = TEMPLATE_DIR / 'ArticleDetailScreenshot.js'
+HTML2CANVAS_PRO_VERSION = '2.4.2'
+HTML2CANVAS_PRO_TARBALL = f'https://registry.npmjs.org/html2canvas-pro/-/html2canvas-pro-{HTML2CANVAS_PRO_VERSION}.tgz'
 
 TEMPLATE_FILES = {
     'RenderStyledText.vue': 'src/components/RenderStyledText.vue',
@@ -166,6 +169,89 @@ def patch_article_detail() -> None:
         text = text[:style_close] + deep_styles + text[style_close:]
 
     write(rel, text)
+
+
+def patch_screenshot_export() -> None:
+    rel = 'src/components/ArticleDetail.vue'
+    text = read(rel)
+    if not SCREENSHOT_TEMPLATE.exists():
+        raise RuntimeError(f'missing screenshot template: {SCREENSHOT_TEMPLATE.relative_to(ROOT)}')
+    screenshot_template = SCREENSHOT_TEMPLATE.read_text(encoding='utf-8').rstrip() + '\n'
+
+    managed_pattern = re.compile(
+        r'// BEGIN fork screenshot export\n.*?// END fork screenshot export\n',
+        re.S,
+    )
+    if managed_pattern.search(text):
+        text = managed_pattern.sub(lambda _match: screenshot_template, text, count=1)
+    else:
+        legacy_pattern = re.compile(
+            r'(?:\s*// Save article as image\s*)?\n?const saveAsImage = async \(\) => \{.*?\n\};\n\n(?=const openOriginalLink)',
+            re.S,
+        )
+        updated, count = legacy_pattern.subn(
+            lambda _match: '\n' + screenshot_template + '\n',
+            text,
+            count=1,
+        )
+        if count != 1:
+            raise RuntimeError(f'{rel}: saveAsImage block not found')
+        text = updated
+
+    write(rel, text)
+
+
+def patch_screenshot_dependency() -> None:
+    package_rel = 'package.json'
+    package_text = read(package_rel)
+    package_pattern = re.compile(r'("html2canvas-pro"\s*:\s*)"[^"]+"')
+    package_text, package_count = package_pattern.subn(
+        lambda match: match.group(1) + f'"{HTML2CANVAS_PRO_VERSION}"',
+        package_text,
+        count=1,
+    )
+    if package_count != 1:
+        raise RuntimeError(f'{package_rel}: html2canvas-pro dependency not found')
+    write(package_rel, package_text)
+
+    lock_rel = 'package-lock.json'
+    lock_text = read(lock_rel)
+    lock_text, root_count = package_pattern.subn(
+        lambda match: match.group(1) + f'"{HTML2CANVAS_PRO_VERSION}"',
+        lock_text,
+        count=1,
+    )
+    if root_count != 1:
+        raise RuntimeError(f'{lock_rel}: root html2canvas-pro dependency not found')
+
+    package_block_pattern = re.compile(
+        r'("node_modules/html2canvas-pro"\s*:\s*\{)(.*?)(\n\s*\})',
+        re.S,
+    )
+    block_match = package_block_pattern.search(lock_text)
+    if not block_match:
+        raise RuntimeError(f'{lock_rel}: node_modules/html2canvas-pro block not found')
+
+    body = block_match.group(2)
+    body, version_count = re.subn(
+        r'("version"\s*:\s*)"[^"]+"',
+        lambda match: match.group(1) + f'"{HTML2CANVAS_PRO_VERSION}"',
+        body,
+        count=1,
+    )
+    body, resolved_count = re.subn(
+        r'("resolved"\s*:\s*)"[^"]+"',
+        lambda match: match.group(1) + f'"{HTML2CANVAS_PRO_TARBALL}"',
+        body,
+        count=1,
+    )
+    if version_count != 1 or resolved_count != 1:
+        raise RuntimeError(f'{lock_rel}: html2canvas-pro package metadata incomplete')
+
+    body = re.sub(r'\n\s*"integrity"\s*:\s*"[^"]+",?', '', body, count=1)
+    replacement = block_match.group(1) + body + block_match.group(3)
+    lock_text = lock_text[:block_match.start()] + replacement + lock_text[block_match.end():]
+    write(lock_rel, lock_text)
 
 
 def ensure_plain_text_import(text: str, rel: str) -> str:
@@ -641,6 +727,8 @@ def main() -> None:
     _v2_patch_feed_card()
     _v2_patch_user_profile()
     _v2_patch_article_detail()
+    patch_screenshot_export()
+    patch_screenshot_dependency()
     _v2_patch_enhanced_renderer('src/components/EnhancedContentRenderer.vue')
     _v2_patch_content_renderer()
     _v2_patch_reference_renderer('src/components/ReferenceBlockRenderer.vue')
