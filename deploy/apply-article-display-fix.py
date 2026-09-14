@@ -8,6 +8,11 @@ TEMPLATE_DIR = ROOT / 'deploy' / 'fork-templates' / 'article-display'
 SCREENSHOT_TEMPLATE = TEMPLATE_DIR / 'ArticleDetailScreenshot.js'
 HTML2CANVAS_PRO_VERSION = '2.4.2'
 HTML2CANVAS_PRO_TARBALL = f'https://registry.npmjs.org/html2canvas-pro/-/html2canvas-pro-{HTML2CANVAS_PRO_VERSION}.tgz'
+KATEX_VERSION = '0.18.7'
+KATEX_TARBALL = f'https://registry.npmjs.org/katex/-/katex-{KATEX_VERSION}.tgz'
+KATEX_COMMANDER_VERSION = '8.3.0'
+KATEX_COMMANDER_TARBALL = f'https://registry.npmjs.org/commander/-/commander-{KATEX_COMMANDER_VERSION}.tgz'
+KATEX_COMMANDER_INTEGRITY = 'sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww=='
 
 TEMPLATE_FILES = {
     'RenderStyledText.vue': 'src/components/RenderStyledText.vue',
@@ -253,6 +258,88 @@ def patch_screenshot_dependency() -> None:
     lock_text = lock_text[:block_match.start()] + replacement + lock_text[block_match.end():]
     write(lock_rel, lock_text)
 
+
+
+def patch_formula_dependency() -> None:
+    package_rel = 'package.json'
+    package_text = read(package_rel)
+    katex_pattern = re.compile(r'("katex"\s*:\s*)"[^"]+"')
+    if katex_pattern.search(package_text):
+        package_text = katex_pattern.sub(
+            lambda match: match.group(1) + f'"{KATEX_VERSION}"',
+            package_text,
+            count=1,
+        )
+    else:
+        dependency_anchor = f'    "html2canvas-pro": "{HTML2CANVAS_PRO_VERSION}",\n'
+        if dependency_anchor not in package_text:
+            raise RuntimeError(f'{package_rel}: dependency insertion anchor missing')
+        package_text = package_text.replace(
+            dependency_anchor,
+            dependency_anchor + f'    "katex": "{KATEX_VERSION}",\n',
+            1,
+        )
+    write(package_rel, package_text)
+
+    lock_rel = 'package-lock.json'
+    lock_text = read(lock_rel)
+    root_end = lock_text.find('    "node_modules/')
+    if root_end == -1:
+        raise RuntimeError(f'{lock_rel}: package section boundary missing')
+    root_text = lock_text[:root_end]
+    remainder = lock_text[root_end:]
+    if katex_pattern.search(root_text):
+        root_text = katex_pattern.sub(
+            lambda match: match.group(1) + f'"{KATEX_VERSION}"',
+            root_text,
+            count=1,
+        )
+    else:
+        dependency_anchor = f'        "html2canvas-pro": "{HTML2CANVAS_PRO_VERSION}",\n'
+        if dependency_anchor not in root_text:
+            raise RuntimeError(f'{lock_rel}: root dependency insertion anchor missing')
+        root_text = root_text.replace(
+            dependency_anchor,
+            dependency_anchor + f'        "katex": "{KATEX_VERSION}",\n',
+            1,
+        )
+    lock_text = root_text + remainder
+
+    katex_block = f'''    "node_modules/katex": {{
+      "version": "{KATEX_VERSION}",
+      "resolved": "{KATEX_TARBALL}",
+      "license": "MIT",
+      "dependencies": {{
+        "commander": "^8.3.0"
+      }},
+      "bin": {{
+        "katex": "cli.js"
+      }}
+    }},
+    "node_modules/katex/node_modules/commander": {{
+      "version": "{KATEX_COMMANDER_VERSION}",
+      "resolved": "{KATEX_COMMANDER_TARBALL}",
+      "integrity": "{KATEX_COMMANDER_INTEGRITY}",
+      "license": "MIT",
+      "engines": {{
+        "node": ">= 12"
+      }}
+    }},
+'''
+    block_pattern = re.compile(
+        r'    "node_modules/katex": \{.*?\n    \},\n'
+        r'(?:    "node_modules/katex/node_modules/commander": \{.*?\n    \},\n)?',
+        re.S,
+    )
+    if block_pattern.search(lock_text):
+        lock_text = block_pattern.sub(katex_block, lock_text, count=1)
+    else:
+        package_anchor = '    "node_modules/kind-of": {'
+        if package_anchor not in lock_text:
+            raise RuntimeError(f'{lock_rel}: KaTeX package insertion anchor missing')
+        lock_text = lock_text.replace(package_anchor, katex_block + package_anchor, 1)
+
+    write(lock_rel, lock_text)
 
 
 def patch_screenshot_csp() -> None:
@@ -783,6 +870,7 @@ def main() -> None:
     _v2_patch_article_detail()
     patch_screenshot_export()
     patch_screenshot_dependency()
+    patch_formula_dependency()
     patch_screenshot_csp()
     _v2_patch_enhanced_renderer('src/components/EnhancedContentRenderer.vue')
     _v2_patch_content_renderer()

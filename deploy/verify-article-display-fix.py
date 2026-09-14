@@ -22,7 +22,8 @@ def require(rel: str, needle: str, label: str) -> None:
 
 require('src/components/RenderStyledText.vue', "part.kind === 'formula'", 'formula branch missing')
 require('src/components/RenderStyledText.vue', 'formula.content', 'formula LaTeX data missing')
-require('src/components/RenderStyledText.vue', 'formula.img_url', 'formula image data missing')
+require('src/components/RenderStyledText.vue', "import katex from 'katex';", 'KaTeX renderer import missing')
+require('src/components/RenderStyledText.vue', 'katex.renderToString', 'KaTeX formula rendering missing')
 require('src/components/EnhancedContentRenderer.vue', "segment?.type === 'code_block'", 'code block renderer missing')
 require('src/components/EnhancedContentRenderer.vue', "segment?.type === 'reference_block'", 'reference block renderer missing')
 require('src/components/EnhancedContentRenderer.vue', 'UnknownSegmentRenderer', 'unknown segment fallback missing')
@@ -163,14 +164,26 @@ def _verify_v2() -> None:
             errors.append('ReferenceBlockRenderer.vue: raw reference HTML still reaches styled text renderer')
     styled = _v2_get('src/components/RenderStyledText.vue')
     if styled:
-        if 'mix-blend-mode: screen' in styled:
-            errors.append('RenderStyledText.vue: formula screen blending remains')
-        if 'mix-blend-mode: difference' not in styled:
-            errors.append('RenderStyledText.vue: adaptive formula blending missing')
-        if ':global(.dark) .styled-formula-image' in styled or ':global(html.dark) .styled-formula-image' in styled:
-            errors.append('RenderStyledText.vue: malformed scoped :global selector would target the dark root')
-        if ':global(.dark .styled-formula-image)' not in styled:
-            errors.append('RenderStyledText.vue: scoped dark formula selector missing')
+        for marker, label in [
+            ("import katex from 'katex';", 'KaTeX renderer import missing'),
+            ("import 'katex/dist/katex.min.css';", 'KaTeX stylesheet import missing'),
+            ('katex.renderToString', 'KaTeX renderToString call missing'),
+            ("output: 'html'", 'KaTeX HTML output mode missing'),
+            ('trust: false', 'KaTeX untrusted-input protection missing'),
+            ('.styled-formula-katex :deep(.katex)', 'KaTeX size override missing'),
+            ('font-size: 1em;', 'formula text-size normalization missing'),
+        ]:
+            if marker not in styled:
+                errors.append(f'RenderStyledText.vue: {label}')
+        for forbidden, label in [
+            ('formula.img_url', 'remote formula image dependency remains'),
+            ('formula.image_url', 'remote formula image dependency remains'),
+            ('styled-formula-image', 'formula image CSS remains'),
+            ('mix-blend-mode:', 'formula blend-mode workaround remains'),
+            ('filter: invert(', 'formula dark-mode image filter remains'),
+        ]:
+            if forbidden in styled:
+                errors.append(f'RenderStyledText.vue: {label}')
 
     code_renderer = _v2_get('src/components/CodeBlockRenderer.vue')
     if code_renderer:
@@ -178,18 +191,37 @@ def _verify_v2() -> None:
             errors.append('CodeBlockRenderer.vue: malformed scoped :global selector remains')
         if ':global(.dark .code-block-renderer)' not in code_renderer:
             errors.append('CodeBlockRenderer.vue: scoped dark code selector missing')
+        copy_style = re.search(r'\.code-copy\s*\{(.*?)\}', code_renderer, re.S)
+        if not copy_style:
+            errors.append('CodeBlockRenderer.vue: code-copy style missing')
+        else:
+            copy_body = copy_style.group(1)
+            for marker, label in [
+                ('width: auto;', 'copy button width override missing'),
+                ('flex: 0 0 auto;', 'copy button flex sizing missing'),
+                ('white-space: nowrap;', 'copy button no-wrap rule missing'),
+            ]:
+                if marker not in copy_body:
+                    errors.append(f'CodeBlockRenderer.vue: {label}')
     for rel in ['src/components/CodeBlockRenderer.vue', 'src/components/ReferenceBlockRenderer.vue', 'src/components/UnknownSegmentRenderer.vue']:
         text = _v2_get(rel)
         if text and ('var(--f7-page-bg-color, #fff)' in text or 'var(--f7-text-color, #111)' in text):
             errors.append(f'{rel}: hard-coded light theme fallbacks remain')
 
     template_styled = _v2_get('deploy/fork-templates/article-display/RenderStyledText.vue')
-    if template_styled and (':global(.dark) .styled-formula-image' in template_styled or ':global(html.dark) .styled-formula-image' in template_styled):
-        errors.append('RenderStyledText template: malformed scoped :global selector remains')
+    if template_styled:
+        if 'katex.renderToString' not in template_styled or "import 'katex/dist/katex.min.css';" not in template_styled:
+            errors.append('RenderStyledText template: KaTeX renderer is not preserved')
+        if 'formula.img_url' in template_styled or 'styled-formula-image' in template_styled:
+            errors.append('RenderStyledText template: remote formula image rendering remains')
 
     template_code = _v2_get('deploy/fork-templates/article-display/CodeBlockRenderer.vue')
-    if template_code and (':global(.dark) .code-block-renderer' in template_code or ':global(html.dark) .code-block-renderer' in template_code):
-        errors.append('CodeBlockRenderer template: malformed scoped :global selector remains')
+    if template_code:
+        if ':global(.dark) .code-block-renderer' in template_code or ':global(html.dark) .code-block-renderer' in template_code:
+            errors.append('CodeBlockRenderer template: malformed scoped :global selector remains')
+        template_copy = re.search(r'\.code-copy\s*\{(.*?)\}', template_code, re.S)
+        if not template_copy or 'width: auto;' not in template_copy.group(1) or 'flex: 0 0 auto;' not in template_copy.group(1):
+            errors.append('CodeBlockRenderer template: bounded copy button sizing missing')
 
     permanent_apply = require_file('deploy/apply-article-display-fix.py')
     if '# BEGIN article display v2 integrated' not in permanent_apply or '_v2_patch_search_page()' not in permanent_apply:
@@ -268,6 +300,38 @@ def _verify_screenshot_export() -> None:
 
 
 
+def _verify_formula_rendering() -> None:
+    package = _v2_get('package.json')
+    if package and '"katex": "0.18.7"' not in package:
+        errors.append('package.json: katex must be pinned to 0.18.7')
+
+    lock = _v2_get('package-lock.json')
+    if lock:
+        root_end = lock.find('    "node_modules/')
+        root_text = lock[:root_end] if root_end != -1 else lock
+        if '"katex": "0.18.7"' not in root_text:
+            errors.append('package-lock.json: root katex version is not 0.18.7')
+        katex_block = re.search(r'"node_modules/katex"\s*:\s*\{(.*?)\n\s*\}', lock, re.S)
+        if not katex_block:
+            errors.append('package-lock.json: katex package block missing')
+        else:
+            body = katex_block.group(1)
+            if '"version": "0.18.7"' not in body:
+                errors.append('package-lock.json: installed katex version is not 0.18.7')
+            if 'katex-0.18.7.tgz' not in body:
+                errors.append('package-lock.json: katex 0.18.7 tarball missing')
+        commander_block = re.search(r'"node_modules/katex/node_modules/commander"\s*:\s*\{(.*?)\n\s*\}', lock, re.S)
+        if not commander_block or '"version": "8.3.0"' not in commander_block.group(1):
+            errors.append('package-lock.json: katex commander 8.3.0 dependency missing')
+
+    apply_script = _v2_get('deploy/apply-article-display-fix.py')
+    if apply_script:
+        if 'def patch_formula_dependency() -> None:' not in apply_script:
+            errors.append('deploy/apply-article-display-fix.py: formula dependency patch missing')
+        if 'patch_formula_dependency()' not in apply_script:
+            errors.append('deploy/apply-article-display-fix.py: formula dependency patch is not invoked')
+
+
 def _verify_screenshot_csp() -> None:
     source_index = _v2_get('src/index.html')
     if source_index:
@@ -298,6 +362,7 @@ def _verify_screenshot_csp() -> None:
 
 _verify_v2()
 _verify_screenshot_export()
+_verify_formula_rendering()
 _verify_screenshot_csp()
 if errors:
     print('article display fix verification failed:', file=sys.stderr)

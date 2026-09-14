@@ -325,18 +325,27 @@ async function copyCode() {
 }
 
 .code-language {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   letter-spacing: 0.04em;
 }
 
 .code-copy {
   appearance: none;
+  width: auto;
+  min-width: 0;
+  flex: 0 0 auto;
   border: 0;
   border-radius: 6px;
   padding: 4px 8px;
   color: inherit;
   background: color-mix(in srgb, var(--f7-text-color, CanvasText) 8%, transparent);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .code-copy:hover {

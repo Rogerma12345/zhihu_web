@@ -7,19 +7,13 @@
         :class="{ 'styled-formula-block': part.block }"
         :title="part.tex || '公式'"
       >
-        <img
-          v-if="part.imgUrl && !failedFormulaUrls.has(part.imgUrl)"
-          class="styled-formula-image"
-          :class="{ 'styled-formula-image-block': part.block }"
-          :src="part.imgUrl"
-          :alt="part.tex || '公式'"
-          :width="part.width || undefined"
-          :height="part.height || undefined"
-          loading="lazy"
-          decoding="async"
-          @error="markFormulaImageFailed(part.imgUrl)"
-        />
-        <span v-else class="styled-formula-fallback">{{ part.tex || '[公式]' }}</span>
+        <span
+          v-if="part.html"
+          class="styled-formula-katex"
+          :class="{ 'styled-formula-katex-block': part.block }"
+          v-html="part.html"
+        ></span>
+        <span v-else class="styled-formula-fallback">{{ part.tex || part.sourceText || '[公式]' }}</span>
       </span>
 
       <a
@@ -39,7 +33,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import { safeHttpUrl } from '../utils/content-text.js';
 
 const props = defineProps({
@@ -52,15 +48,6 @@ const props = defineProps({
     default: () => [],
   },
 });
-
-const failedFormulaUrls = ref(new Set());
-
-function markFormulaImageFailed(url) {
-  if (!url) return;
-  const next = new Set(failedFormulaUrls.value);
-  next.add(url);
-  failedFormulaUrls.value = next;
-}
 
 function asIndex(value, fallback = 0) {
   const number = Number(value);
@@ -111,6 +98,47 @@ function textClasses(activeMarks) {
   };
 }
 
+function normalizeFormulaTex(value) {
+  let tex = String(value || '').trim();
+  if (!tex) return '';
+
+  const wrappers = [
+    ['$$', '$$'],
+    ['\\[', '\\]'],
+    ['\\(', '\\)'],
+  ];
+  for (const [start, end] of wrappers) {
+    if (tex.startsWith(start) && tex.endsWith(end) && tex.length >= start.length + end.length) {
+      tex = tex.slice(start.length, tex.length - end.length).trim();
+      break;
+    }
+  }
+
+  if (tex.startsWith('$') && tex.endsWith('$') && !tex.startsWith('$$') && tex.length >= 2) {
+    tex = tex.slice(1, -1).trim();
+  }
+
+  return tex;
+}
+
+function renderFormulaHtml(tex, displayMode) {
+  if (!tex) return '';
+  try {
+    return katex.renderToString(tex, {
+      displayMode,
+      output: 'html',
+      throwOnError: true,
+      trust: false,
+      strict: 'ignore',
+      maxSize: 20,
+      maxExpand: 1000,
+    });
+  } catch (error) {
+    console.warn('KaTeX formula rendering failed:', { tex, error });
+    return '';
+  }
+}
+
 const parts = computed(() => {
   const text = props.text || '';
   const marks = normalizeMarks(text, props.marks);
@@ -141,15 +169,16 @@ const parts = computed(() => {
         emittedFormula.add(key);
         const formula = formulaMark.formula || {};
         const formulaText = text.slice(formulaMark.start_index, formulaMark.end_index);
+        const tex = normalizeFormulaTex(formula.content || formulaText);
+        const block = text.trim() === formulaText.trim();
         result.push({
           kind: 'formula',
           start: formulaMark.start_index,
           end: formulaMark.end_index,
-          tex: formula.content || '',
-          imgUrl: safeHttpUrl(formula.img_url || formula.image_url || ''),
-          width: Number(formula.width) || null,
-          height: Number(formula.height) || null,
-          block: text.trim() === formulaText.trim(),
+          tex,
+          sourceText: formulaText,
+          block,
+          html: renderFormulaHtml(tex, block),
         });
       }
       continue;
@@ -221,50 +250,61 @@ const parts = computed(() => {
 }
 
 .styled-formula-wrap {
-  display: inline-flex;
-  max-width: 100%;
-  vertical-align: -0.22em;
-  align-items: center;
-  justify-content: center;
-  margin: 0 0.08em;
-}
-
-.styled-formula-image {
   display: inline-block;
-  width: auto;
-  max-width: min(100%, 56rem);
-  height: auto;
-  max-height: 1.75em;
-  object-fit: contain;
-  vertical-align: middle;
-  border-radius: 2px;
+  max-width: 100%;
+  margin: 0 0.04em;
+  color: inherit;
+  vertical-align: baseline;
+  white-space: nowrap;
 }
 
-:global(.dark .styled-formula-image),
-:global(html.dark .styled-formula-image) {
-  filter: invert(1) hue-rotate(180deg);
-  mix-blend-mode: difference;
+.styled-formula-katex {
+  display: inline;
+  color: inherit;
+}
+
+.styled-formula-katex :deep(.katex) {
+  color: inherit;
+  font-size: 1em;
+  line-height: 1.2;
+  text-rendering: geometricPrecision;
 }
 
 .styled-formula-block {
-  display: flex;
+  display: block;
   width: 100%;
-  margin: 0.8em auto;
+  margin: 0.85em auto;
   overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+  white-space: normal;
+  -webkit-overflow-scrolling: touch;
 }
 
-.styled-formula-image-block {
-  max-height: none;
-  max-width: 100%;
+.styled-formula-katex-block {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+}
+
+.styled-formula-block :deep(.katex-display) {
+  margin: 0;
+  overflow: visible;
+}
+
+.styled-formula-block :deep(.katex) {
+  font-size: 1em;
 }
 
 .styled-formula-fallback {
   display: inline-block;
   max-width: 100%;
   overflow-x: auto;
-  padding: 0.08em 0.28em;
+  padding: 0.06em 0.2em;
   border-radius: 4px;
   font-family: "Times New Roman", "STIX Two Math", serif;
+  font-size: 1em;
+  line-height: 1.2;
   background: color-mix(in srgb, currentColor 7%, transparent);
 }
 </style>
