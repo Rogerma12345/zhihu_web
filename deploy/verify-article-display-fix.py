@@ -26,6 +26,9 @@ require('src/components/RenderStyledText.vue', "import katex from 'katex';", 'Ka
 require('src/components/RenderStyledText.vue', 'katex.renderToString', 'KaTeX formula rendering missing')
 require('src/components/EnhancedContentRenderer.vue', "segment?.type === 'code_block'", 'code block renderer missing')
 require('src/components/EnhancedContentRenderer.vue', "segment?.type === 'reference_block'", 'reference block renderer missing')
+require('src/components/EnhancedContentRenderer.vue', "segment?.type === 'table'", 'table renderer missing')
+require('src/components/TableSegmentRenderer.vue', 'rowsFromHtml', 'HTML table normalization missing')
+require('src/components/TableSegmentRenderer.vue', 'rowsFromFlatCells', 'flat table-cell normalization missing')
 require('src/components/EnhancedContentRenderer.vue', 'UnknownSegmentRenderer', 'unknown segment fallback missing')
 require('src/components/CodeBlockRenderer.vue', 'code_block', 'code block component marker missing') if False else None
 require('src/components/CodeBlockRenderer.vue', 'highlightPlain', 'syntax highlighting missing')
@@ -88,6 +91,7 @@ for template in [
     'EnhancedContentRenderer.vue',
     'CodeBlockRenderer.vue',
     'ReferenceBlockRenderer.vue',
+    'TableSegmentRenderer.vue',
     'UnknownSegmentRenderer.vue',
     'content-text.js',
 ]:
@@ -148,6 +152,15 @@ def _verify_v2() -> None:
             errors.append('EnhancedContentRenderer.vue: imageClick emit missing')
         if '@imageClick="emit(\'imageClick\', $event)"' not in renderer:
             errors.append('EnhancedContentRenderer.vue: legacy imageClick is not forwarded')
+        if "import TableSegmentRenderer from './TableSegmentRenderer.vue';" not in renderer:
+            errors.append('EnhancedContentRenderer.vue: table renderer import missing')
+        if "segment?.type === 'table'" not in renderer:
+            errors.append('EnhancedContentRenderer.vue: table segment branch missing')
+    table_renderer = _v2_get('src/components/TableSegmentRenderer.vue')
+    if table_renderer:
+        for token in ['rowsFromHtml', 'rowsFromFlatCells', 'colspan', 'rowspan']:
+            if token not in table_renderer:
+                errors.append(f'TableSegmentRenderer.vue: missing table support token {token}')
     content = _v2_get('src/components/ContentRenderer.vue')
     if content:
         if 'htmlToPlainText(segment.card.title' not in content:
@@ -203,7 +216,7 @@ def _verify_v2() -> None:
             ]:
                 if marker not in copy_body:
                     errors.append(f'CodeBlockRenderer.vue: {label}')
-    for rel in ['src/components/CodeBlockRenderer.vue', 'src/components/ReferenceBlockRenderer.vue', 'src/components/UnknownSegmentRenderer.vue']:
+    for rel in ['src/components/CodeBlockRenderer.vue', 'src/components/ReferenceBlockRenderer.vue', 'src/components/TableSegmentRenderer.vue', 'src/components/UnknownSegmentRenderer.vue']:
         text = _v2_get(rel)
         if text and ('var(--f7-page-bg-color, #fff)' in text or 'var(--f7-text-color, #111)' in text):
             errors.append(f'{rel}: hard-coded light theme fallbacks remain')

@@ -19,6 +19,7 @@ TEMPLATE_FILES = {
     'EnhancedContentRenderer.vue': 'src/components/EnhancedContentRenderer.vue',
     'CodeBlockRenderer.vue': 'src/components/CodeBlockRenderer.vue',
     'ReferenceBlockRenderer.vue': 'src/components/ReferenceBlockRenderer.vue',
+    'TableSegmentRenderer.vue': 'src/components/TableSegmentRenderer.vue',
     'UnknownSegmentRenderer.vue': 'src/components/UnknownSegmentRenderer.vue',
     'content-text.js': 'src/utils/content-text.js',
 }
@@ -796,7 +797,7 @@ def _v2_patch_template_copies() -> None:
     styled = base / 'RenderStyledText.vue'
     if styled.exists():
         _v2_patch_render_styled_text(str(styled.relative_to(ROOT)))
-    for name in ['CodeBlockRenderer.vue', 'UnknownSegmentRenderer.vue']:
+    for name in ['CodeBlockRenderer.vue', 'TableSegmentRenderer.vue', 'UnknownSegmentRenderer.vue']:
         component = base / name
         if component.exists():
             _v2_patch_theme_fallbacks(str(component.relative_to(ROOT)))
@@ -877,6 +878,7 @@ def main() -> None:
     _v2_patch_reference_renderer('src/components/ReferenceBlockRenderer.vue')
     _v2_patch_render_styled_text('src/components/RenderStyledText.vue')
     _v2_patch_theme_fallbacks('src/components/CodeBlockRenderer.vue')
+    _v2_patch_theme_fallbacks('src/components/TableSegmentRenderer.vue')
     _v2_patch_theme_fallbacks('src/components/UnknownSegmentRenderer.vue')
     _v2_patch_template_copies()
 
