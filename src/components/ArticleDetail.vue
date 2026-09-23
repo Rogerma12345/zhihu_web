@@ -752,7 +752,7 @@ const copyOriginalLink = () => {
                     </f7-card-content>
                 </f7-card>
 
-                <EnhancedContentRenderer :segments="item.structured_content" @imageClick="handleImageClick" />
+                <EnhancedContentRenderer :segments="item.structured_content" :source-html="item.content" @imageClick="handleImageClick" />
 
                 <div v-if="imageList.length > 0" class="image-gallery margin-top">
                     <swiper-container pagination>

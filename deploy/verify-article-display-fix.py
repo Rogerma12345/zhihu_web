@@ -29,6 +29,9 @@ require('src/components/EnhancedContentRenderer.vue', "segment?.type === 'refere
 require('src/components/EnhancedContentRenderer.vue', "segment?.type === 'table'", 'table renderer missing')
 require('src/components/TableSegmentRenderer.vue', 'rowsFromHtml', 'HTML table normalization missing')
 require('src/components/TableSegmentRenderer.vue', 'rowsFromFlatCells', 'flat table-cell normalization missing')
+require('src/components/EnhancedContentRenderer.vue', 'sourceTableHtml', 'raw article HTML table fallback missing')
+require('src/components/EnhancedContentRenderer.vue', ":fallback-html=\"tableHtmlBySegmentIndex[index] || ''\"", 'table fallback HTML wiring missing')
+require('src/components/TableSegmentRenderer.vue', 'fallbackHtml', 'table fallback HTML prop missing')
 require('src/components/EnhancedContentRenderer.vue', 'UnknownSegmentRenderer', 'unknown segment fallback missing')
 require('src/components/CodeBlockRenderer.vue', 'code_block', 'code block component marker missing') if False else None
 require('src/components/CodeBlockRenderer.vue', 'highlightPlain', 'syntax highlighting missing')
@@ -42,6 +45,8 @@ if article:
         errors.append('ArticleDetail.vue: enhanced renderer import missing')
     if '<EnhancedContentRenderer' not in article:
         errors.append('ArticleDetail.vue: enhanced renderer usage missing')
+    if ':source-html="item.content"' not in article:
+        errors.append('ArticleDetail.vue: raw article HTML is not passed to enhanced renderer')
     block = re.search(r'\.bottom-float-container\s*\{(.*?)\}', article, re.S)
     if not block:
         errors.append('ArticleDetail.vue: bottom action bar style missing')
@@ -131,6 +136,8 @@ def _verify_v2() -> None:
             errors.append('ArticleDetail.vue: EnhancedContentRenderer import missing')
         if '<EnhancedContentRenderer' not in article or 'item.structured_content' not in article:
             errors.append('ArticleDetail.vue: enhanced renderer not used for article body')
+        if ':source-html="item.content"' not in article:
+            errors.append('ArticleDetail.vue: raw article HTML fallback not wired')
         bottom = re.search('\\.bottom-float-container\\s*\\{(.*?)\\}', article, re.S)
         if not bottom:
             errors.append('ArticleDetail.vue: bottom-float-container style missing')
@@ -156,9 +163,17 @@ def _verify_v2() -> None:
             errors.append('EnhancedContentRenderer.vue: table renderer import missing')
         if "segment?.type === 'table'" not in renderer:
             errors.append('EnhancedContentRenderer.vue: table segment branch missing')
+        for token, label in [
+            ('sourceHtml', 'sourceHtml prop missing'),
+            ('sourceTableHtml', 'raw HTML table extraction missing'),
+            ('tableHtmlBySegmentIndex', 'table-to-segment order mapping missing'),
+            (':fallback-html="tableHtmlBySegmentIndex[index] || \'\'"', 'table fallback HTML binding missing'),
+        ]:
+            if token not in renderer:
+                errors.append(f'EnhancedContentRenderer.vue: {label}')
     table_renderer = _v2_get('src/components/TableSegmentRenderer.vue')
     if table_renderer:
-        for token in ['rowsFromHtml', 'rowsFromFlatCells', 'colspan', 'rowspan']:
+        for token in ['rowsFromHtml', 'rowsFromFlatCells', 'colspan', 'rowspan', 'fallbackHtml', 'rowsFromHtml(props.fallbackHtml)']:
             if token not in table_renderer:
                 errors.append(f'TableSegmentRenderer.vue: missing table support token {token}')
     content = _v2_get('src/components/ContentRenderer.vue')

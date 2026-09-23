@@ -95,7 +95,7 @@ def patch_article_detail() -> None:
         replaced = False
         for old in exact_forms:
             if old in text:
-                text = text.replace(old, '<EnhancedContentRenderer :segments="item.structured_content" />', 1)
+                text = text.replace(old, '<EnhancedContentRenderer :segments="item.structured_content" :source-html="item.content" />', 1)
                 replaced = True
                 break
 
@@ -112,7 +112,7 @@ def patch_article_detail() -> None:
             if after.endswith('/'):
                 after = after[:-1].rstrip()
             suffix = f' {after}' if after else ''
-            replacement = f'<EnhancedContentRenderer{before} :segments="item.structured_content"{suffix} />'
+            replacement = f'<EnhancedContentRenderer{before} :segments="item.structured_content" :source-html="item.content"{suffix} />'
             text = text[:match.start()] + replacement + text[match.end():]
 
     # The action row must participate in document flow. A light fixed/absolute pill on a
@@ -693,6 +693,18 @@ def _v2_patch_article_detail(rel: str='src/components/ArticleDetail.vue') -> Non
             text = text[:match.start()] + f'<EnhancedContentRenderer{attrs}>' + text[match.end():]
     if '<EnhancedContentRenderer' not in text:
         raise RuntimeError(f'{rel}: structured content renderer was not replaced')
+    enhanced_pattern = re.compile(r'<EnhancedContentRenderer\b(?P<attrs>[^>]*)>', re.S)
+    enhanced_match = enhanced_pattern.search(text)
+    if not enhanced_match:
+        raise RuntimeError(f'{rel}: EnhancedContentRenderer opening tag not found')
+    attrs = enhanced_match.group('attrs')
+    if ':source-html="item.content"' not in attrs and ":source-html='item.content'" not in attrs:
+        opening = enhanced_match.group(0)
+        if re.search(r'/\s*>$', opening):
+            replacement = re.sub(r'\s*/\s*>$', ' :source-html="item.content" />', opening)
+        else:
+            replacement = opening[:-1] + ' :source-html="item.content">'
+        text = text[:enhanced_match.start()] + replacement + text[enhanced_match.end():]
     bottom_block = '.bottom-float-container {\n    position: relative;\n    display: flex;\n    justify-content: center;\n    width: 100%;\n    margin: 20px 0 24px;\n    pointer-events: none;\n    z-index: 20;\n}'
     text = _v2_replace_style_block(text, '.bottom-float-container', bottom_block)
     glass_block = '.glass {\n    background: transparent;\n    backdrop-filter: blur(10px);\n    -webkit-backdrop-filter: blur(10px);\n}'

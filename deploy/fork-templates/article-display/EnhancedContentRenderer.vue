@@ -26,12 +26,12 @@
       <TableSegmentRenderer
         v-else-if="segment?.type === 'table'"
         :segment="segment"
+        :fallback-html="tableHtmlBySegmentIndex[index] || ''"
       />
 
       <ContentRenderer
         v-else-if="isLegacySupported(segment?.type)"
         :segments="[segment]"
-
         @imageClick="emit('imageClick', $event)"
       />
 
@@ -59,11 +59,45 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  sourceHtml: {
+    type: String,
+    default: '',
+  },
 });
 
 const normalizedSegments = computed(() => (
   Array.isArray(props.segments) ? props.segments.filter(Boolean) : []
 ));
+
+function sourceTableHtml(rawHtml) {
+  let html = String(rawHtml || '').trim();
+  if (!html || typeof DOMParser === 'undefined') return [];
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const tables = Array.from(doc.querySelectorAll('table[data-draft-type="table"], table'))
+      .filter((table) => !table.parentElement?.closest('table'));
+    if (tables.length) return tables.map((table) => table.outerHTML);
+
+    const decoded = (doc.body.textContent || '').trim();
+    if (!decoded || decoded === html) break;
+    html = decoded;
+  }
+
+  return [];
+}
+
+const tableHtmlBySegmentIndex = computed(() => {
+  const tables = sourceTableHtml(props.sourceHtml);
+  let tableIndex = 0;
+
+  return normalizedSegments.value.map((segment) => {
+    if (segment?.type !== 'table') return '';
+    const html = tables[tableIndex] || '';
+    tableIndex += 1;
+    return html;
+  });
+});
 
 const LEGACY_SUPPORTED = new Set([
   'paragraph',

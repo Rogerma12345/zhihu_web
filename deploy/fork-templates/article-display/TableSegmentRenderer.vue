@@ -43,6 +43,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  fallbackHtml: {
+    type: String,
+    default: '',
+  },
 });
 
 function positiveSpan(value) {
@@ -194,7 +198,7 @@ function rowsFromHtml(rawHtml) {
 
   return Array.from(table.rows || []).map((row) => (
     Array.from(row.cells || []).map((cell) => ({
-      text: plain(cell.textContent || ''),
+      text: plain(cell.innerHTML || cell.textContent || ''),
       marks: [],
       header: cell.tagName === 'TH',
       colspan: positiveSpan(cell.colSpan),
@@ -252,7 +256,10 @@ function findRows(payload) {
 
 const tableData = computed(() => {
   const payload = tablePayload(props.segment);
-  const rows = findRows(payload);
+  let rows = findRows(payload);
+  if (!rows.length && props.fallbackHtml) {
+    rows = rowsFromHtml(props.fallbackHtml);
+  }
   const caption = [payload.caption, payload.title, payload.description]
     .map((value) => textFromValue(value))
     .find(Boolean) || '';
