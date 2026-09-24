@@ -18,7 +18,7 @@
 
       <a
         v-else-if="part.href"
-        class="styled-link"
+        class="styled-link external prevent-router"
         :class="part.classes"
         :href="part.href"
         target="_blank"

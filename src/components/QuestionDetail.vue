@@ -4,6 +4,7 @@ import { HistoryService } from '../services/historyService.js';
 import $http from '../api/http.js';
 import CommentsSheet from './CommentsSheet.vue';
 import { useHistory } from '../composables/useHistory.js';
+import { normalizeZhihuHtmlLinks } from '../utils/content-text.js';
 
 
 const props = defineProps({
@@ -63,7 +64,7 @@ const fetchInfo = async () => {
         question.value = {
             id: id.value,
             title: data.title,
-            description: data.detail || data.excerpt || '',
+            description: normalizeZhihuHtmlLinks(data.detail || data.excerpt || ''),
             tags: (data.topics || []).slice(0, 5).map(t => ({ id: t.id, name: t.name })),
             answerCount: data.answer_count || 0,
             followerCount: data.follower_count || 0,

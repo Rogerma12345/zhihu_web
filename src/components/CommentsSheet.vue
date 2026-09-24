@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import { f7 } from 'framework7-vue';
 import $http from '../api/http.js';
+import { normalizeZhihuHtmlLinks } from '../utils/content-text.js';
 
 const props = defineProps({
     modelValue: Boolean,
@@ -45,7 +46,7 @@ const formatComment = (item) => {
     const authorName = item.author?.name || "匿名用户";
     const authorAvatar = item.author?.avatar_url;
     const ipLocation = item.address_text || null;
-    const content = convertLinksToOpenlink(item.content);
+    const content = normalizeZhihuHtmlLinks(item.content, { forceNewTab: true });
     const likeCount = item.vote_count || 0;
     const liked = item.liked;
     const disliked = item.disliked;
@@ -333,31 +334,6 @@ watch(sortOrder, () => {
 });
 
 
-const convertLinksToOpenlink = function (html) {
-    if (typeof html !== 'string') return html;
-
-    return html.replace(/<a\s+([^>]*?)>/gi, (match, attrs) => {
-        // 提取原始的 href 值
-        const hrefMatch = attrs.match(/href\s*=\s*(["'])(.*?)\1/i);
-        if (!hrefMatch) return match;
-
-        const originalUrl = hrefMatch[2];
-
-        // 移除 target 和 rel 属性
-        let newAttrs = attrs
-            .replace(/\s*target\s*=\s*["'][^"']*["']/gi, '')
-            .replace(/\s+rel\s*=\s*["'][^"']*["']/gi, '')
-            .replace(/\s+class\s*=\s*["'][^"']*["']/gi, '');
-
-        // 替换 href
-        newAttrs = newAttrs.replace(
-            /href\s*=\s*(["']).*?\1/i,
-            `href="javascript:$openLink('${originalUrl}')"`
-        );
-
-        return `<a ${newAttrs}>`;
-    });
-};
 </script>
 
 <template>

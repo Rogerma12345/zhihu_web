@@ -7,7 +7,7 @@
     />
     <a
       v-else-if="fallback.url"
-      class="unknown-link"
+      class="unknown-link external prevent-router"
       :href="fallback.url"
       target="_blank"
       rel="noopener noreferrer"

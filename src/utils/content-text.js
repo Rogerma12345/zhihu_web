@@ -83,14 +83,119 @@ export function htmlToPlainText(value) {
   return normalizeWhitespace(text);
 }
 
+const ZHIHU_BASE_URL = 'https://www.zhihu.com/';
+const ZHIHU_REDIRECT_HOST = 'link.zhihu.com';
+const MAX_ZHIHU_REDIRECT_DEPTH = 4;
+
+function isHttpUrl(url) {
+  return url && ['http:', 'https:'].includes(url.protocol);
+}
+
+function unwrapZhihuRedirect(url) {
+  let current = url;
+
+  for (let depth = 0; depth < MAX_ZHIHU_REDIRECT_DEPTH; depth += 1) {
+    if (current.hostname.toLowerCase() !== ZHIHU_REDIRECT_HOST) {
+      return current.href;
+    }
+
+    // Zhihu's outbound redirect endpoint is HTTPS-only here. Reject unusual
+    // variants rather than navigating through the intermediary.
+    if (current.protocol !== 'https:' || current.port) return '';
+
+    const target = current.searchParams.get('target');
+    if (!target) return '';
+
+    try {
+      // Deliberately parse the target without a base URL. A redirect target
+      // must be an absolute HTTP(S) URL and must never depend on deployment
+      // origin or window.location. URLSearchParams already
+      // performs the single percent-decoding required for the query value.
+      current = new URL(target);
+    } catch {
+      return '';
+    }
+
+    if (!isHttpUrl(current)) return '';
+  }
+
+  // Do not fall back to visiting link.zhihu.com if an unexpectedly deep
+  // redirect chain is supplied.
+  return current.hostname.toLowerCase() === ZHIHU_REDIRECT_HOST ? '' : current.href;
+}
+
 export function safeHttpUrl(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '';
+
   try {
-    const url = new URL(raw, 'https://www.zhihu.com/');
-    if (!['http:', 'https:'].includes(url.protocol)) return '';
-    return url.href;
+    // Zhihu API content may contain relative href values. Resolve those
+    // against a fixed Zhihu origin, never against the deployment origin.
+    const url = new URL(raw, ZHIHU_BASE_URL);
+    if (!isHttpUrl(url)) return '';
+    return unwrapZhihuRedirect(url);
   } catch {
     return '';
   }
+}
+
+/**
+ * Rewrite links inside Zhihu API HTML without executing link code.
+ * - link.zhihu.com redirects become direct HTTP(S) targets.
+ * - Framework7 is told not to treat absolute content links as app routes.
+ * - Referrer/ping/attribution metadata is suppressed for outbound privacy.
+ * - Existing target behavior is preserved unless forceNewTab is requested.
+ */
+export function normalizeZhihuHtmlLinks(value, { forceNewTab = false } = {}) {
+  const html = String(value ?? '');
+  if (!html || typeof DOMParser === 'undefined') return html;
+
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  doc.querySelectorAll('a[href]').forEach((anchor) => {
+    // Never retain executable/event-based link behavior from API HTML.
+    for (const attr of [...anchor.attributes]) {
+      if (/^on/i.test(attr.name)) anchor.removeAttribute(attr.name);
+    }
+    anchor.removeAttribute('ping');
+    anchor.removeAttribute('attributionsrc');
+
+    const rawHref = anchor.getAttribute('href');
+    if (!rawHref) return;
+
+    const trimmedHref = rawHref.trim();
+    // Hash links are document-local and are not outbound navigation.
+    if (trimmedHref.startsWith('#')) return;
+
+    // Preserve non-network handlers that are safe to hand to the browser,
+    // while still keeping Framework7 away from them.
+    if (/^(mailto|tel):/i.test(trimmedHref)) {
+      anchor.classList.add('external', 'prevent-router');
+      if (forceNewTab) anchor.setAttribute('target', '_blank');
+      return;
+    }
+
+    const href = safeHttpUrl(trimmedHref);
+    if (!href) {
+      // Reject schemes/redirects that cannot be normalized to HTTP(S).
+      anchor.removeAttribute('href');
+      anchor.removeAttribute('target');
+      return;
+    }
+
+    anchor.setAttribute('href', href);
+    anchor.classList.add('external', 'prevent-router');
+    anchor.setAttribute('referrerpolicy', 'no-referrer');
+
+    const rel = new Set(
+      (anchor.getAttribute('rel') || '').split(/\s+/).filter(Boolean),
+    );
+    rel.add('noopener');
+    rel.add('noreferrer');
+    anchor.setAttribute('rel', [...rel].join(' '));
+
+    if (forceNewTab) anchor.setAttribute('target', '_blank');
+  });
+
+  return doc.body.innerHTML;
 }

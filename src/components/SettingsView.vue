@@ -599,7 +599,7 @@ loadThemeSettings();
                     </f7-nav-right>
                 </f7-navbar>
                 <f7-block>
-                    <p>下载元萝卜 <f7-link external
+                    <p>下载元萝卜 <f7-link external rel="noreferrer"
                             href="https://github.com/Katana-Official/SPatch-Update/releases">https://github.com/Katana-Official/SPatch-Update/releases</f7-link>
                     </p>
                     <p>安装mt管理器和知乎 打开分身的知乎同意协议进入主页后 退出打开mt管理器 进入侧滑 点击终端执行器 执行以下命令</p>

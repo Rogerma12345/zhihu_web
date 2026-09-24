@@ -9,7 +9,7 @@
     >
       <a
         v-if="itemHref(item)"
-        class="reference-link"
+        class="reference-link external prevent-router"
         :href="itemHref(item)"
         target="_blank"
         rel="noopener noreferrer"

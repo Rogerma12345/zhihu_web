@@ -16,6 +16,7 @@ import './style.css';
 import App from './App.vue';
 import $http from './api/http.js';
 import * as zhihuModule from './api/utils/zhihu-module.js';
+import { safeHttpUrl } from './utils/content-text.js';
 
 // Init Framework7-Vue Plugin
 Framework7.use(Framework7Vue);
@@ -29,7 +30,9 @@ window.$http = $http;
 window.$zhihu = zhihuModule;
 
 const $openLink = function (url) {
-    window.open(url, '_blank', 'noopener,noreferrer')
+    const directUrl = safeHttpUrl(url);
+    if (!directUrl) return null;
+    return window.open(directUrl, '_blank', 'noopener,noreferrer');
 }
 window.$openLink = $openLink
 app.config.globalProperties.$openLink = $openLink
