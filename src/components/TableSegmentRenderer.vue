@@ -22,7 +22,6 @@
         </tbody>
       </table>
     </div>
-
     <div v-else class="table-empty">
       {{ tableData.fallback || '表格暂无可显示内容' }}
     </div>
@@ -37,7 +36,6 @@
 import { computed } from 'vue';
 import RenderStyledText from './RenderStyledText.vue';
 import { htmlToPlainText } from '../utils/content-text.js';
-
 const props = defineProps({
   segment: {
     type: Object,
@@ -59,7 +57,6 @@ function plain(value) {
   if (value === null || value === undefined) return '';
   return htmlToPlainText(String(value));
 }
-
 function textFromValue(value, depth = 0) {
   if (value === null || value === undefined || depth > 5) return '';
   if (['string', 'number', 'boolean'].includes(typeof value)) return plain(value);
@@ -70,7 +67,6 @@ function textFromValue(value, depth = 0) {
       .join('\n');
   }
   if (typeof value !== 'object') return '';
-
   const direct = [
     value.text,
     value.value,
@@ -93,7 +89,6 @@ function textFromValue(value, depth = 0) {
   }
   return '';
 }
-
 function normalizeCell(rawCell) {
   if (rawCell === null || rawCell === undefined || typeof rawCell !== 'object') {
     return {
@@ -104,13 +99,11 @@ function normalizeCell(rawCell) {
       rowspan: 1,
     };
   }
-
   const payload = rawCell.table_cell || rawCell.cell || rawCell;
   const nestedText = payload.text && typeof payload.text === 'object' ? payload.text : null;
   const type = String(payload.type || rawCell.type || '').toLowerCase();
   const tag = String(payload.tag || payload.tag_name || '').toLowerCase();
   const role = String(payload.role || '').toLowerCase();
-
   return {
     text: textFromValue(payload),
     marks: Array.isArray(payload.marks)
@@ -133,7 +126,6 @@ function normalizeCell(rawCell) {
     ),
   };
 }
-
 function rowCells(rawRow) {
   if (Array.isArray(rawRow)) return rawRow;
   if (!rawRow || typeof rawRow !== 'object') return [rawRow];
@@ -143,14 +135,54 @@ function rowCells(rawRow) {
   }
   return [payload];
 }
-
 function normalizeRows(rawRows) {
   if (!Array.isArray(rawRows)) return [];
   return rawRows
     .map((row) => rowCells(row).map(normalizeCell))
     .filter((row) => row.length > 0);
 }
+function rowsFromSizedFlatCells(payload) {
+  if (!payload || typeof payload !== 'object') return [];
+  const cells = payload.cells;
+  if (!Array.isArray(cells) || cells.length === 0) return [];
 
+  const columnCount = Number(
+    payload.column_count ??
+    payload.columnCount ??
+    payload.columns_count ??
+    payload.columnsCount,
+  );
+  if (!Number.isFinite(columnCount) || columnCount <= 0) return [];
+
+  const declaredRowCount = Number(payload.row_count ?? payload.rowCount);
+  const rowCount = Number.isFinite(declaredRowCount) && declaredRowCount > 0
+    ? Math.trunc(declaredRowCount)
+    : Math.ceil(cells.length / columnCount);
+  const headRow = Boolean(payload.head_row ?? payload.headRow);
+  const headColumn = Boolean(payload.head_column ?? payload.headColumn);
+  const rows = [];
+
+  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+    const start = rowIndex * columnCount;
+    if (start >= cells.length) break;
+    const row = cells
+      .slice(start, start + columnCount)
+      .map((rawCell, columnIndex) => {
+        const cell = normalizeCell(rawCell);
+        return {
+          ...cell,
+          header: Boolean(
+            cell.header ||
+            (headRow && rowIndex === 0) ||
+            (headColumn && columnIndex === 0)
+          ),
+        };
+      });
+    if (row.length) rows.push(row);
+  }
+
+  return rows;
+}
 function rowsFromFlatCells(cells) {
   if (!Array.isArray(cells) || cells.length === 0) return [];
   const positioned = cells.filter((cell) => {
@@ -160,7 +192,6 @@ function rowsFromFlatCells(cells) {
     );
   });
   if (positioned.length !== cells.length) return [];
-
   const rows = new Map();
   positioned.forEach((cell, sourceIndex) => {
     const payload = cell.table_cell || cell.cell || cell;
@@ -172,7 +203,6 @@ function rowsFromFlatCells(cells) {
     if (!rows.has(rowIndex)) rows.set(rowIndex, []);
     rows.get(rowIndex).push({ cell, columnIndex: Number.isFinite(columnIndex) ? columnIndex : sourceIndex });
   });
-
   return [...rows.entries()]
     .sort(([a], [b]) => a - b)
     .map(([, row]) => row
@@ -187,7 +217,6 @@ function rowsFromHtml(rawHtml) {
   const parse = (source) => new DOMParser().parseFromString(source, 'text/html');
   let doc = parse(html);
   let table = doc.querySelector('table');
-
   // Some API responses escape the whole table as text once.
   if (!table && /&lt;\s*table/i.test(html)) {
     const decoded = doc.body.textContent || '';
@@ -195,7 +224,6 @@ function rowsFromHtml(rawHtml) {
     table = doc.querySelector('table');
   }
   if (!table) return [];
-
   return Array.from(table.rows || []).map((row) => (
     Array.from(row.cells || []).map((cell) => ({
       text: plain(cell.innerHTML || cell.textContent || ''),
@@ -206,7 +234,6 @@ function rowsFromHtml(rawHtml) {
     }))
   )).filter((row) => row.length > 0);
 }
-
 function tablePayload(segment) {
   if (!segment || typeof segment !== 'object') return {};
   const table = segment.table;
@@ -215,7 +242,6 @@ function tablePayload(segment) {
   if (table && typeof table === 'object') return table;
   return segment;
 }
-
 function findRows(payload) {
   const sources = [
     payload.rows,
@@ -231,6 +257,11 @@ function findRows(payload) {
   ];
   for (const source of sources) {
     const rows = normalizeRows(source);
+    if (rows.length) return rows;
+  }
+
+  for (const source of [payload, payload.data, payload.content, payload.body]) {
+    const rows = rowsFromSizedFlatCells(source);
     if (rows.length) return rows;
   }
 
@@ -253,7 +284,6 @@ function findRows(payload) {
   }
   return [];
 }
-
 const tableData = computed(() => {
   const payload = tablePayload(props.segment);
   let rows = findRows(payload);
@@ -267,7 +297,6 @@ const tableData = computed(() => {
   const fallback = rows.length ? '' : textFromValue(
     payload.text ?? payload.value ?? (typeof payload.content === 'string' ? payload.content : ''),
   );
-
   return { rows, caption, fallback };
 });
 </script>
@@ -287,7 +316,6 @@ const tableData = computed(() => {
   border-radius: 10px;
   -webkit-overflow-scrolling: touch;
 }
-
 .article-table {
   width: 100%;
   min-width: max-content;
@@ -297,7 +325,6 @@ const tableData = computed(() => {
   font-size: 15px;
   line-height: 1.55;
 }
-
 .article-table th,
 .article-table td {
   min-width: 7em;
@@ -315,7 +342,6 @@ const tableData = computed(() => {
   font-weight: 700;
   background: color-mix(in srgb, currentColor 6%, transparent);
 }
-
 .article-table tr:last-child > * {
   border-bottom: 0;
 }
@@ -331,7 +357,6 @@ const tableData = computed(() => {
   line-height: 1.5;
   text-align: center;
 }
-
 .table-empty {
   padding: 12px 14px;
   border: 1px dashed color-mix(in srgb, var(--f7-text-color, CanvasText) 24%, transparent);
