@@ -89,50 +89,75 @@ const fetchInfo = async () => {
     }
 };
 
+let answersRequestSeq = 0;
+
 const fetchAnswers = async (isRefresh = false) => {
-    if (!isRefresh && !hasMore.value) return;
-    if (isLoadingMore.value) return;
+  // 翻页请求仍然禁止并发；排序切换/刷新请求允许覆盖旧请求。
+  if (!isRefresh && (!hasMore.value || isLoadingMore.value)) return;
 
-    isLoadingMore.value = true;
-    try {
-        let res;
-        if (isRefresh || !lastResult.value) {
-            const url = `https://api.zhihu.com/questions/${id.value}/answers?limit=20&order=${sortOrder.value}`;
-            res = await $http.get(url);
-        } else {
-            res = await lastResult.value.next();
-        }
+  // 每次重新加载第一页时生成新的请求序号。
+  // 如果用户在旧请求结束前切换排序，旧结果将被直接丢弃。
+  const requestSeq = isRefresh
+    ? ++answersRequestSeq
+    : answersRequestSeq;
 
-        if (!res) {
-            hasMore.value = false;
-        } else {
-            const rawList = res.data || [];
+  isLoadingMore.value = true;
 
-            const mappedList = rawList.map(item => ({
-                id: item.id,
-                author: item.author?.name || '匿名用户',
-                avatarUrl: item.author?.avatar_url,
-                excerpt: item.excerpt || item.content?.substring(0, 200) || '',
-                voteCount: item.voteup_count || 0,
-                commentCount: item.comment_count || 0,
-                timestamp: new Date(item.created_time * 1000).toLocaleDateString()
-            }));
+  try {
+    let res;
 
-            if (isRefresh) {
-                answers.value = mappedList;
-            } else {
-                answers.value.push(...mappedList);
-            }
+    if (isRefresh || !lastResult.value) {
+      const url =
+        `https://api.zhihu.com/questions/${id.value}/answers` +
+        `?limit=20&sort_by=${sortOrder.value}`;
 
-            lastResult.value = res;
-            hasMore.value = res.paging?.is_end !== true && Boolean(res.paging?.next);
-        }
-    } catch (err) {
-        console.error('Failed to fetch answers:', err);
-        hasMore.value = false;
-    } finally {
-        isLoadingMore.value = false;
+      res = await $http.get(url);
+    } else {
+      res = await lastResult.value.next();
     }
+
+    // 排序已经发生变化，当前响应属于旧排序，不写入页面。
+    if (requestSeq !== answersRequestSeq) return;
+
+    if (!res) {
+      hasMore.value = false;
+      return;
+    }
+
+    const rawList = res.data || [];
+
+    const mappedList = rawList.map(item => ({
+      id: item.id,
+      author: item.author?.name || '匿名用户',
+      avatarUrl: item.author?.avatar_url,
+      excerpt: item.excerpt || item.content?.substring(0, 200) || '',
+      voteCount: item.voteup_count || 0,
+      commentCount: item.comment_count || 0,
+      timestamp: new Date(item.created_time * 1000).toLocaleDateString()
+    }));
+
+    if (isRefresh) {
+      answers.value = mappedList;
+    } else {
+      answers.value.push(...mappedList);
+    }
+
+    lastResult.value = res;
+    hasMore.value =
+      res.paging?.is_end !== true &&
+      Boolean(res.paging?.next);
+  } catch (err) {
+    // 已经切换排序的旧请求报错无需影响当前列表。
+    if (requestSeq !== answersRequestSeq) return;
+
+    console.error('Failed to fetch answers:', err);
+    hasMore.value = false;
+  } finally {
+    // 只有当前最新请求才能修改 loading 状态。
+    if (requestSeq === answersRequestSeq) {
+      isLoadingMore.value = false;
+    }
+  }
 };
 
 const onRefresh = async (done) => {
