@@ -56,10 +56,10 @@ async function refreshUser() {
 
   state.isLoading = true;
   try {
-    let userData;
+    let webUser = null;
     if ($http.canSignWebRequests()) {
       try {
-        userData = await $http.get('https://www.zhihu.com/api/v4/me', {
+        webUser = await $http.get('https://www.zhihu.com/api/v4/me', {
           requestMode: 'web',
           requireWebSignature: true,
         });
@@ -67,7 +67,13 @@ async function refreshUser() {
         console.warn('网页用户信息读取失败，改用应用接口', e);
       }
     }
-    if (!userData) userData = await $http.get('https://api.zhihu.com/me');
+
+    let userData = webUser;
+    if (!webUser?.id) {
+      const appUser = await $http.get('https://api.zhihu.com/me');
+      userData = { ...(appUser || {}), ...(webUser || {}) };
+      if (appUser?.id) userData.id = appUser.id;
+    }
     state.currentUser = userData;
     events.emit('user:updated', userData); // 通知订阅者数据已更新
     return userData;
