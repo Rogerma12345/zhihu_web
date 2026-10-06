@@ -48,6 +48,7 @@ const { data: userInfo, loading, reload: fetchUserInfo } = useResource(
         transform: (data) => {
             const mappedItem = {
                 id: data.id,
+                urlToken: data.url_token || data.urlToken || '',
                 name: data.name,
                 avatarUrl: data.avatar_url,
                 coverUrl: data.cover_url,
@@ -325,10 +326,11 @@ const handleItemClick = (f7router, item) => {
     const type = item.type;
     if (type === 'more_tab') {
         if (id.includes('收藏')) {
+            const token = userInfo.value?.urlToken || userId;
             if (id.includes('关注')) {
-                f7router.navigate(`/collections/${userId}/following`);
+                f7router.navigate(`/collections/${token}/following`);
             } else {
-                f7router.navigate(`/collections/${userId}/mine`);
+                f7router.navigate(`/collections/${token}/mine`);
             }
         } else {
             f7router.navigate(`/people-more/${userId}/${id}`);

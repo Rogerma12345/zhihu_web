@@ -15,25 +15,38 @@ const props = defineProps({
 });
 const { currentUser } = useUser();
 const userId = computed(() => currentUser.value?.id || '');
+const userToken = computed(() => currentUser.value?.url_token || currentUser.value?.urlToken || '');
 const activeTab = ref(props.tab || 'questions');
 
-const tabs = computed(() => [
-    { id: 'questions', label: '问题', url: `https://api.zhihu.com/people/${userId.value}/following-questions` },
-    { id: 'collections', label: '收藏夹', url: `https://api.zhihu.com/people/${userId.value}/following_collections` },
-    { id: 'topics', label: '话题', url: `https://api.zhihu.com/people/${userId.value}/following_topics` },
-    { id: 'columns', label: '专栏', url: `https://api.zhihu.com/people/${userId.value}/following_columns` },
-    { id: 'users', label: '用户', url: `https://api.zhihu.com/people/${userId.value}/followees` },
-    { id: 'specials', label: '专题', url: `https://api.zhihu.com/people/${userId.value}/following_news_specials` },
-    { id: 'roundtables', label: '圆桌', url: `https://api.zhihu.com/people/${userId.value}/following_roundtables` }
-]);
+const tabs = computed(() => {
+    const token = encodeURIComponent(userToken.value);
+    const id = encodeURIComponent(userId.value);
+    return [
+        { id: 'questions', label: '问题', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-questions` : null, web: true },
+        { id: 'collections', label: '收藏夹', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-favlists` : null, web: true },
+        { id: 'topics', label: '话题', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-topic-contributions` : null, web: true },
+        { id: 'columns', label: '专栏', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-columns` : null, web: true },
+        { id: 'users', label: '用户', url: token ? `https://www.zhihu.com/api/v4/members/${token}/followees` : null, web: true },
+        { id: 'specials', label: '专题', url: id ? `https://api.zhihu.com/people/${id}/following_news_specials` : null },
+        { id: 'roundtables', label: '圆桌', url: id ? `https://api.zhihu.com/people/${id}/following_roundtables` : null }
+    ];
+});
 
-const urlFor = (tabId) => tabs.value.find(t => t.id === tabId).url;
+const tabFor = (tabId) => tabs.value.find(t => t.id === tabId);
+const urlFor = (tabId) => tabFor(tabId)?.url || null;
 
 const { tabs: tabData, loading: tabLoading, ensure, refresh, loadMore, ensureLoaded, reset } = useTabbedPagedList({
     name: '关注列表',
     tabs: () => tabs.value.map(t => t.id),
     fillEl: (tabId) => scrollElements[tabId],
-    fetch: (tabId, signal) => $http.get(`${urlFor(tabId)}?limit=20`, { signal }),
+    fetch: (tabId, signal) => {
+        const tab = tabFor(tabId);
+        if (!tab?.url) return null;
+        const options = tab.web
+            ? { requestMode: 'web', requireWebSignature: true, signal }
+            : { signal };
+        return $http.get(`${tab.url}?limit=20`, options);
+    },
     map: (item, tabId) => mapItem(tabId, item),
 });
 
@@ -70,19 +83,21 @@ const mapItem = (tabId, item) => {
                 image: item.creator?.avatar_url,
                 type: 'collection'
             };
-        case 'topics':
+        case 'topics': {
+            const topic = item.topic || item;
             return {
-                id: item.id,
-                title: item.name,
-                subtitle: item.excerpt || '无介绍',
+                id: topic.id,
+                title: topic.name,
+                subtitle: topic.introduction || topic.excerpt || '无介绍',
                 type: 'topic'
             };
+        }
         case 'columns':
             return {
                 id: item.id,
                 title: item.title,
-                subtitle: item.description || '无介绍',
-                footer: `${item.items_count} 篇内容 · ${item.voteup_count} 个赞同`,
+                subtitle: item.intro || item.description || '无介绍',
+                footer: `${item.articles_count ?? item.items_count ?? 0} 篇内容 · ${item.followers ?? item.follower_count ?? 0} 人关注`,
                 type: 'column'
             };
         case 'users': {
@@ -141,7 +156,7 @@ const handleFollowClick = async (item) => {
 
 // currentUser 由 App 异步刷新填充，冷启动直达本页时 id 尚为空，直接请求会打出 people//xxx 的坏请求
 const loadTab = (tabId) => {
-    if (userId.value) ensureLoaded(tabId);
+    if (urlFor(tabId)) ensureLoaded(tabId);
 };
 
 onMounted(() => {
@@ -150,10 +165,10 @@ onMounted(() => {
 
 watch(activeTab, loadTab);
 
-watch(userId, (newId) => {
-    if (!newId) return;
+const userKey = computed(() => `${userId.value}|${userToken.value}`);
+watch(userKey, () => {
     tabs.value.forEach(tab => reset(tab.id));
-    ensureLoaded(activeTab.value);
+    loadTab(activeTab.value);
 });
 </script>
 

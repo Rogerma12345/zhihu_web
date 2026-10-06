@@ -17,8 +17,9 @@ const props = defineProps({
 const activeTab = ref(props.f7route?.params?.defaultTab || 'mine');
 const { currentUser } = useUser();
 const routeUserId = props.f7route?.params?.userId;
-const effectiveUserId = computed(() => routeUserId || currentUser.value?.id || '');
-const isOwnProfile = computed(() => !routeUserId || routeUserId === currentUser.value?.id);
+const currentUserToken = computed(() => currentUser.value?.url_token || currentUser.value?.urlToken || '');
+const effectiveUserToken = computed(() => routeUserId || currentUserToken.value);
+const isOwnProfile = computed(() => !routeUserId || [currentUser.value?.id, currentUserToken.value].includes(routeUserId));
 
 const scrollElements = {};
 const setScrollRef = (elRef, id) => {
@@ -26,10 +27,10 @@ const setScrollRef = (elRef, id) => {
 };
 
 const tabs = computed(() => {
-    const uid = effectiveUserId.value;
+    const token = encodeURIComponent(effectiveUserToken.value || '');
     const baseTabs = [
-        { id: 'mine', label: "收藏", url: `https://api.zhihu.com/people/${uid}/collections_v2` },
-        { id: 'following', label: "关注", url: `https://api.zhihu.com/people/${uid}/following_collections` }
+        { id: 'mine', label: '收藏', url: token ? `https://www.zhihu.com/api/v4/members/${token}/favlists` : null, web: true },
+        { id: 'following', label: '关注', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-favlists` : null, web: true }
     ];
     if (isOwnProfile.value) {
         baseTabs.push({ id: 'recommend', label: '推荐内容', url: 'https://api.zhihu.com/explore/collections' });
@@ -37,13 +38,20 @@ const tabs = computed(() => {
     return baseTabs;
 });
 
-const urlFor = (tabId) => tabs.value.find(t => t.id === tabId).url;
+const tabFor = (tabId) => tabs.value.find(t => t.id === tabId);
 
 const { tabs: tabData, loading: tabLoading, ensure, refresh, loadMore, ensureLoaded, reset } = useTabbedPagedList({
     name: '收藏夹列表',
     tabs: () => tabs.value.map(t => t.id),
     fillEl: (tabId) => scrollElements[tabId],
-    fetch: (tabId, signal) => $http.get(`${urlFor(tabId)}?limit=20`, { isWWW: tabId !== 'recommend', signal }),
+    fetch: (tabId, signal) => {
+        const tab = tabFor(tabId);
+        if (!tab?.url) return null;
+        const options = tab.web
+            ? { requestMode: 'web', requireWebSignature: true, signal }
+            : { signal };
+        return $http.get(`${tab.url}?limit=20`, options);
+    },
     map: (item, tabId) => mapItem(tabId, item),
 });
 
@@ -130,12 +138,12 @@ const onEditSaved = () => {
 };
 
 onMounted(() => {
-    if (!hasCache.value && effectiveUserId.value) {
+    if (!hasCache.value && effectiveUserToken.value) {
         ensureLoaded(activeTab.value);
     }
 });
 
-watch(effectiveUserId, (newId) => {
+watch(effectiveUserToken, (newId) => {
     if (newId) {
         tabs.value.forEach(tab => reset(tab.id));
         ensureLoaded(activeTab.value);
@@ -152,7 +160,7 @@ const showSearchPrompt = () => {
         '搜索内容',
         (value) => {
             if (value.trim()) {
-                props.f7router.navigate(`/search-result/collection/${value}/${effectiveUserId.value}`);
+                props.f7router.navigate(`/search-result/collection/${value}/${effectiveUserToken.value}`);
             } else {
                 f7.toast.show({ text: '搜索关键词不能为空' });
             }

@@ -222,7 +222,7 @@ watch(sortOrder, () => {
             </f7-block>
 
             <div
-                class="answers-header-bar padding-horizontal display-flex justify-content-space-between align-items-center bg-color-white">
+                class="answers-header-bar padding-horizontal display-flex justify-content-space-between align-items-center">
                 <f7-block-title class="no-margin">{{ question.answerCount }} 个回答</f7-block-title>
                 <div class="sort-selector">
                     <f7-link :class="{ 'active-sort': sortOrder === 'default' }"
@@ -300,8 +300,9 @@ watch(sortOrder, () => {
 }
 
 .answers-header-bar {
-    border-bottom: 1px solid var(--app-divider-color);
     height: 44px;
+    background-color: var(--f7-page-bg-color);
+    border-bottom: 1px solid var(--app-divider-color);
 }
 
 .sort-selector {
