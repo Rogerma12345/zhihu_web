@@ -103,6 +103,20 @@ test('mapMomentsFeed 拼作者与动作文案', () => {
     assert.equal(mapped.id, 'a9');
 });
 
+test('mapMomentsFeed 想法正文去掉 HTML 标记', () => {
+    const mapped = mapMomentsFeed({
+        source: { actor: { name: '史图馆' } },
+        target: {
+            type: 'moments_pin',
+            id: 'p9',
+            content: [{
+                content: '<p>第一段</p><p><a class="hash_tag" href="https://www.zhihu.com/topic/1">#历史</a></p>',
+            }],
+        },
+    });
+    assert.equal(mapped.excerpt, '第一段\n#历史');
+});
+
 test('mapFeedItemIndexGroup：无 actors 时取作者对象的 name，people 卡片缺扩展字段不抛错', () => {
     const noActors = mapFeedItemIndexGroup({
         target: { type: 'answer', id: 'a1', title: '标题', digest: '摘要', author: { name: '甲', avatar_url: '' } },

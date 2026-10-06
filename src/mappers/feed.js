@@ -1,6 +1,7 @@
 // src/mappers/feed.js
 // 首页各 feed 流的原始响应 → 卡片视图模型。
 import { voteupOf, commentCountOf } from '@/mappers/zhihu-item.js';
+import { htmlToPlainText } from '@/utils/content-text.js';
 
 const parseChineseNumber = (str) => {
     if (!str) return 0;
@@ -58,7 +59,7 @@ export function mapMomentsFeed(item) {
 
     const type = targetItem.type === 'moments_pin' ? 'pin' : targetItem.type;
     const authorName = actor.name || '未知用户';
-    const preview = targetItem.preview || '';
+    const preview = htmlToPlainText(targetItem.preview || '');
 
     let title = targetItem.title || targetItem.excerpt_title || '';
     let excerpt = targetItem.excerpt || '';
@@ -80,6 +81,9 @@ export function mapMomentsFeed(item) {
             excerpt = preview || targetItem.description || '[视频]';
             break;
     }
+
+    title = htmlToPlainText(title);
+    excerpt = htmlToPlainText(excerpt);
 
     if (preview && preview !== '[视频]') {
         excerpt = `${authorName}: ${excerpt}`;
@@ -152,6 +156,9 @@ export function mapFeedItemIndexGroup(item) {
         }
     }
 
+    title = htmlToPlainText(title);
+    excerpt = htmlToPlainText(excerpt);
+
     if (excerpt && excerpt !== '[视频]' && excerpt !== '[直播]') {
         excerpt = `${authorName} : ${excerpt}`;
     }
@@ -173,7 +180,7 @@ export function mapFeedItemIndexGroup(item) {
 /** 想法流单条 */
 export function mapThoughtItem(item) {
     const targetItem = item.target || item;
-    const excerpt = targetItem.excerpt || '';
+    const excerpt = htmlToPlainText(targetItem.excerpt || '');
     const authorName = targetItem.author?.name || '匿名用户';
 
     let image = '';
