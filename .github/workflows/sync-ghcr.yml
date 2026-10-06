@@ -1,17 +1,15 @@
-name: Sync upstream and publish GHCR
+name: 同步上游并发布镜像
 
 on:
   schedule:
     - cron: "27 3 * * *"
-
   workflow_dispatch:
     inputs:
       force_build:
-        description: "Build and publish even when upstream has not changed"
+        description: "上游无更新时仍重新构建并发布"
         required: false
         type: boolean
         default: false
-
   push:
     branches:
       - main
@@ -26,144 +24,70 @@ concurrency:
 
 env:
   IMAGE_NAME: ghcr.io/rogerma12345/zhihu_web
+
 jobs:
   sync-and-publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout fork
-        uses: actions/checkout@v4
+      - name: 检出分支
+        uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
 
-      - name: Prepare upstream workspace
+      - name: 合并上游改动
         id: prepare
         shell: bash
         run: |
           set -euo pipefail
-
           if [[ "${{ github.event_name }}" == "push" ]]; then
             upstream_sha="$(awk -F= '$1 == "upstream_sha" { print $2; exit }' .upstream-state)"
-            if [[ ! "$upstream_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-              echo "Invalid upstream_sha in .upstream-state" >&2
-              exit 1
-            fi
-
-            upstream_sha="${upstream_sha,,}"
-
-            echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
+            [[ "$upstream_sha" =~ ^[0-9a-fA-F]{40}$ ]]
+            echo "upstream_sha=${upstream_sha,,}" >> "$GITHUB_OUTPUT"
             echo "upstream_changed=false" >> "$GITHUB_OUTPUT"
           else
-            bash ./deploy/sync-upstream.sh
+            ./deploy/sync-upstream.sh
           fi
-      - name: Verify fork source
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 deploy/verify-project-fixes.py .
 
-      - name: Check synchronized workspace
-        if: steps.prepare.outputs.upstream_changed == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f src/index.html
-          test -f package.json
-          test -f package-lock.json
-          test -f vite.config.js
-          test -f workbox-config.js
-          test -f deploy/nginx.conf
-          python3 deploy/verify-project-fixes.py .
-          if ! git diff --quiet -- \
-            Dockerfile \
-            .dockerignore \
-            deploy \
-            SELFHOST.md \
-            .github/workflows \
-            .upstream-state
-          then
-            echo "Fork-managed files changed before publication" >&2
-            git diff -- \
-              Dockerfile \
-              .dockerignore \
-              deploy \
-              SELFHOST.md \
-              .github/workflows \
-              .upstream-state >&2
-            exit 1
-          fi
-      - name: Decide whether to build
+      - name: 判断是否构建
         id: decision
         shell: bash
         run: |
           set -euo pipefail
-
           should_build=false
-
           if [[ "${{ github.event_name }}" == "push" ]]; then
             should_build=true
-
           elif [[ "${{ steps.prepare.outputs.upstream_changed }}" == "true" ]]; then
             should_build=true
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.force_build }}" == "true" ]]; then
             should_build=true
           fi
-
           echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
 
-      - name: Check keepalive threshold
-        id: keepalive
-        if: github.event_name == 'schedule' && steps.prepare.outputs.upstream_changed != 'true'
+      - name: 配置 Node.js
+        if: steps.decision.outputs.should_build == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 安装依赖并检查源码
+        if: steps.decision.outputs.should_build == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          upstream_sha="${{ steps.prepare.outputs.upstream_sha }}"
+          npm ci --no-audit --no-fund
+          npm test
+          npm run build
 
-          last_activity="$(awk -F= '$1 == "last_activity" { print $2; exit }' .upstream-state)"
-
-          if [[ -z "$last_activity" ]]; then
-            echo "Missing last_activity in .upstream-state" >&2
-            exit 1
-          fi
-
-          now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          now_epoch="$(date -u +%s)"
-          last_epoch="$(date -u -d "$last_activity" +%s)" || {
-            echo "Invalid last_activity in .upstream-state: $last_activity" >&2
-            exit 1
-          }
-
-          if (( now_epoch - last_epoch >= 30 * 24 * 60 * 60 )); then
-            printf 'upstream_sha=%s\nlast_activity=%s\n' \
-              "$upstream_sha" \
-              "$now_iso" > .upstream-state
-
-            echo "needed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "needed=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Commit keepalive activity
-        if: steps.keepalive.outputs.needed == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add .upstream-state
-          git commit -m "chore: keep upstream sync active"
-          git push origin HEAD:main
-      - name: Prepare image metadata values
+      - name: 准备镜像信息
         id: image_vars
         if: steps.decision.outputs.should_build == 'true'
         shell: bash
         run: |
           set -euo pipefail
-
           upstream_sha="${{ steps.prepare.outputs.upstream_sha }}"
-          echo "upstream_sha=$upstream_sha" >> "$GITHUB_OUTPUT"
           echo "upstream_short=${upstream_sha:0:12}" >> "$GITHUB_OUTPUT"
           echo "fork_short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
           echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
@@ -173,25 +97,26 @@ jobs:
             echo "revision=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set up QEMU
+      - name: 配置 QEMU
         if: steps.decision.outputs.should_build == 'true'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
-      - name: Set up Docker Buildx
+      - name: 配置 Docker Buildx
         if: steps.decision.outputs.should_build == 'true'
-        uses: docker/setup-buildx-action@v3
-      - name: Log in to GHCR
+        uses: docker/setup-buildx-action@v4
+
+      - name: 登录 GHCR
         if: steps.decision.outputs.should_build == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate image tags and labels
+      - name: 生成镜像标签
         id: meta
         if: steps.decision.outputs.should_build == 'true'
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
@@ -203,54 +128,39 @@ jobs:
             org.opencontainers.image.revision=${{ steps.image_vars.outputs.revision }}
             org.opencontainers.image.created=${{ steps.image_vars.outputs.created }}
             io.zhihu-web.upstream=https://github.com/zhihulite/zhihu_web
-            io.zhihu-web.upstream-revision=${{ steps.image_vars.outputs.upstream_sha }}
-      - name: Build and push multi-arch image
+            io.zhihu-web.upstream-revision=${{ steps.prepare.outputs.upstream_sha }}
+
+      - name: 构建并发布镜像
         if: steps.decision.outputs.should_build == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
-
           push: true
-
-          platforms: |
-            linux/amd64
-            linux/arm64
-
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Record successful upstream publication
+
+      - name: 提交同步结果
         if: success() && steps.prepare.outputs.upstream_changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
-
-          upstream_sha="${{ steps.prepare.outputs.upstream_sha }}"
-          now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          printf 'upstream_sha=%s\nlast_activity=%s\n' \
-            "$upstream_sha" \
-            "$now_iso" > .upstream-state
-          if ! git diff --quiet -- \
-            Dockerfile \
-            .dockerignore \
-            deploy \
-            SELFHOST.md \
-            .github/workflows
-          then
-            echo "Refusing to commit automatic fork-managed changes" >&2
-            git diff -- \
-              Dockerfile \
-              .dockerignore \
-              deploy \
-              SELFHOST.md \
-              .github/workflows >&2
+          if ! git diff --quiet -- Dockerfile .dockerignore deploy SELFHOST.md .github/workflows \
+            || ! git diff --cached --quiet -- Dockerfile .dockerignore deploy SELFHOST.md .github/workflows; then
+            echo "部署文件发生了非预期修改" >&2
+            git diff -- Dockerfile .dockerignore deploy SELFHOST.md .github/workflows >&2
+            git diff --cached -- Dockerfile .dockerignore deploy SELFHOST.md .github/workflows >&2
             exit 1
           fi
+          upstream_sha="${{ steps.prepare.outputs.upstream_sha }}"
+          printf 'upstream_sha=%s\nlast_activity=%s\n' \
+            "$upstream_sha" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > .upstream-state
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "chore: sync upstream ${upstream_sha:0:12}"
+          git commit -m "同步上游 ${upstream_sha:0:12}"
           git push origin HEAD:main

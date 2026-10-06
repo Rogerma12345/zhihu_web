@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
-import { htmlToPlainText } from '../../utils/content-text.js'
+import MetricRow from '@/components/MetricRow.vue';
+import { ICON } from '@/core/icons.js';
 
 const props = defineProps(['item'])
 defineEmits(['click'])
@@ -16,12 +17,13 @@ const isCollapsibleGroup = () => {
 }
 
 const getGroupText = () => {
-  return htmlToPlainText(props.item.groupText || '')
+  return props.item.groupText
 }
 
 const getAllItems = () => {
   return isCollapsibleGroup() ? props.item.groupData : [props.item]
 }
+
 const getUnfoldShowSize = () => {
   return isCollapsibleGroup() ? props.item.unfoldShowSize : 0
 }
@@ -37,10 +39,8 @@ const getRemainingCount = () => {
   const unfoldSize = getUnfoldShowSize()
   return allItems.length - (unfoldSize || allItems.length)
 }
-
-const getPlainTitle = (item) => htmlToPlainText(item?.title || '')
-const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
 </script>
+
 <template>
     <f7-card class="moment-card">
         <!-- 顶部groupText：仅当不是折叠组时显示 -->
@@ -55,6 +55,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
                 <span class="moment-action-time">{{ item.actionText }} · {{ item.timeText }}</span>
             </div>
         </f7-card-header>
+
         <f7-card-content>
             <f7-list media-list>
                 <f7-list-item
@@ -66,22 +67,18 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
                     <div slot="inner" class="moment-item-inner">
                         <div class="moment-item-content">
                             <div slot="title" class="moment-item-title">
-                                <h3 v-if="getPlainTitle(listItem)" class="moment-title">{{ getPlainTitle(listItem) }}</h3>
+                                <h3 v-if="listItem.title" class="moment-title">{{ listItem.title }}</h3>
                             </div>
 
                             <div slot="text" class="moment-item-excerpt">
-                                <div class="moment-excerpt">{{ getPlainExcerpt(listItem) }}</div>
+                                <div class="moment-excerpt">{{ listItem.excerpt }}</div>
                             </div>
 
                             <div slot="footer" class="moment-item-metrics">
-                                <div class="moment-metrics-row-simple">
-                                    <span class="metric">
-                                        <f7-icon :ios="'f7:hand_thumbsup'" :md="'material:thumb_up'" size="14" /> {{ listItem.metrics.likes }}
-                                    </span>
-                                    <span class="metric" v-if="listItem.metrics.comments !== null">
-                                        <f7-icon :ios="'f7:bubble_left'" :md="'material:chat_bubble'" size="14" /> {{ listItem.metrics.comments }}
-                                    </span>
-                                </div>
+                                <MetricRow :items="[
+                                    { icon: ICON.like, value: listItem.metrics.likes },
+                                    { icon: ICON.comment, value: listItem.metrics.comments },
+                                ]" />
                             </div>
                         </div>
                     </div>
@@ -110,6 +107,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
         </f7-card-footer>
     </f7-card>
 </template>
+
 <style scoped>
 .moment-card {
     margin-bottom: 8px;
@@ -139,6 +137,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
     border-radius: 50%;
     object-fit: cover;
 }
+
 .moment-author-name {
     font-weight: 700;
     font-size: 14px;
@@ -147,7 +146,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
 
 .moment-action-time {
     font-size: 12px;
-    color: var(--app-text-muted);
+    color: var(--app-sub-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -157,7 +156,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
 
 .moment-list-item {
     cursor: pointer;
-    border-bottom: 1px solid var(--f7-list-item-border-color, var(--app-border-color));
+    border-bottom: 1px solid var(--app-divider-color);
 }
 
 .moment-list-item:last-child {
@@ -169,6 +168,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
     align-items: flex-start;
     width: 100%;
 }
+
 .moment-item-content {
     width: 100%;
 }
@@ -191,7 +191,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
 
 .moment-excerpt {
     font-size: 14px;
-    color: var(--app-text-secondary);
+    color: var(--app-sub-text);
     line-height: 1.5;
     margin: 0;
 }
@@ -199,15 +199,10 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
 .moment-item-metrics {
     margin-top: 8px;
 }
-.moment-metrics-row-simple {
-    display: flex;
-    gap: 16px;
-    margin: 0;
-}
 
 .metric {
     font-size: 12px;
-    color: var(--app-text-muted);
+    color: var(--app-sub-text);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -215,7 +210,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
 
 /* 展开/折叠按钮样式 */
 .moment-expand-footer {
-    border-top: 1px solid var(--f7-list-item-border-color, var(--app-border-color));
+    border-top: 1px solid var(--app-divider-color);
     cursor: pointer;
     text-align: center;
 }
@@ -228,6 +223,7 @@ const getPlainExcerpt = (item) => htmlToPlainText(item?.excerpt || '')
     font-size: 14px;
     font-weight: 500;
 }
+
 .expand-text {
     color: var(--f7-list-item-title-text-color);
 }

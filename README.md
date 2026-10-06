@@ -1,51 +1,62 @@
-# zhihu_web 分支
+# ZhiHu_Web
 
+> 在线网页端：https://zhihulite.github.io/zhihu_web/
 
+基于 **Framework7** + **GM_xmlhttpRequest** 实现的第三方知乎网页端。
 
-## 文件结构
+> **项目状态**：目前为 Demo 阶段，欢迎有兴趣的开发者参与共建！
 
-`src/style.css` 是完整替换文件，只保留全局布局和项目级主题变量。
+[参与方式与开发规范见 AGENTS.md](https://github.com/zhihulite/zhihu_web/blob/main/AGENTS.md)
 
-`src/utils/paged-scroll.js` 是统一的动态无限滚动和下拉刷新初始化器，并处理首屏内容不足滚动高度时的续页触发。
+---
 
-`src/api/http.js` 是完整替换文件，统一分页对象、保留响应附加字段并兼容现有 DELETE 调用形式。
+## 安装与运行
 
-`deploy/apply-fork-patches.py` 根据当前 main 源码结构修改其余组件，并对缺失的预期结构中止处理，避免静默产生半成品修改。
+```bash
+git clone https://github.com/zhihulite/zhihu_web.git
+cd zhihu_web
+npm install          # postinstall 会自动应用 patches/ 下的 Framework7 补丁
+npm run dev -- --host   # 开发服务器（支持局域网访问）
+npm run build        # 生产构建，产物在 html/
+```
 
-`deploy/verify-project-fixes.py` 检查已确认问题是否仍残留，并检查浅色专用中性色是否仍存在于组件样式中。
+`npm run dev` 与 `npm run build` 相互独立：开发只需 `dev`，部署用 `build`。
 
-`deploy/sync-upstream.sh` 在同步上游源码后重新应用本包修复并执行校验，不再通过长期排除业务源码文件维持 fork 修改。
+---
 
-`deploy/fork-templates` 保存同步时需要恢复的完整 fork 基础文件。
+## Framework7 补丁
 
-`manifest.json` 记录修复范围和目标文件。
+本项目对官方 Framework7 9.0.5 做了少量修改（自动 `routeId`、滚动恢复、若干组件初始化守卫等），
+以 [patch-package](https://github.com/ds300/patch-package) 的补丁形式维护，不再手工替换 `node_modules`。
 
-## 修改问题
+- 补丁文件：`patches/framework7+9.0.5.patch`、`patches/framework7-vue+9.0.5.patch`
+- `npm install` 后由 `postinstall` 钩子自动应用，无需额外操作
 
-统一滚动处理覆盖动态创建的 `.infinite-scroll-content` 与 `.ptr-content`，避免页面初始化完成后才出现的滚动区域没有 Framework7 监听器。统一处理首批内容不足一屏时不会自然产生滚动事件的问题。
+补丁改的是 `node_modules` 里的文件，而 Vite 会缓存依赖预构建的结果，所以**换过补丁或
+重新 `npm install` 后要删掉 `node_modules/.vite` 再启动**，否则跑起来仍是打补丁前的 Framework7
+（典型症状：自动 `routeId` 失效、页面状态不缓存）。`npm run dev -- --force` 等效于清缓存后启动。
 
-分页包装统一把缺少 `paging.next` 的响应视为结束，并保留 `more_tabs` 等分页对象之外的字段。分页 `data` 改为可重复读取，避免组件二次读取时抛错。DELETE 包装兼容项目已有的二参数和三参数调用形式。
+### 修改补丁
 
-搜索页修复跨标签读取错误的 `hasMore`、反向结束判断、反向结束提示、下一页空结果和 `www.zhihu.com` 请求模式。搜索结果页修复未声明变量和分页状态。
+改动 `node_modules/framework7` 或 `node_modules/framework7-vue` 后重新生成补丁：
 
-关注页修复关注问题接口路径、用户条目类型、关注状态字段、空用户标识请求、下一页空结果和加载指示状态。全局卡片跳转增加用户、成员、想法和视频类型归一化，避免用户条目进入文章路由。
+```bash
+npm run patch:make
+```
 
-用户主页修复关注状态、性别字段、资料和标签并发竞态、头像空值访问、重复对象键、内容类型归一化、下一页空结果和分页状态。
+脚本先清掉 `patches/` 里旧的 framework7 补丁，再按排除规则各生成一份；文件名里的版本号取自
+`node_modules` 里实际安装的版本，所以**升级框架后跑一次这条命令**即可，不用记参数、也不用手工改文件名。
+排除规则（剔除声明文件、样式、source map 等非运行时产物，保持补丁最小）写在 `scripts/make-patches.mjs`。
 
-话题页修复未声明 `metrics`、内容类型归一化、分页状态和加载指示状态。统一滚动管理器接管异步出现的标签页滚动初始化。
+### 升级 Framework7
 
-收藏弹层修复加载状态导致的递归分页失效，改为受下一页地址和重复地址约束的迭代加载。收藏列表和收藏详情统一处理空下一页、分页状态和加载指示状态。
+补丁文件名带版本（如 `framework7+9.0.5.patch`）。`npm install` 时若安装的版本与文件名不一致，
+patch-package 仍会尝试应用：hunk 能对上就打成功（只提示版本不匹配），对不上则**直接报错中断**，不会静默留下半套改动。
+所以升级流程是：`npm install framework7@<新版本> framework7-vue@<新版本>` → `npm run patch:make` →
+逐条看补丁是否已被上游修复，能删的 hunk 删掉。
 
-通知页为 `www.zhihu.com` 请求补充正确请求模式，修复已读请求模式、空下一页、分页状态和加载指示状态。
+---
 
-人员列表、更多列表、专栏列表和评论分页统一处理结束条件。人员更多页修复关注问题接口路径。问题详情页加载指示器只在真实加载过程中显示。
+## 验证
 
-登录数据初始化修复 cookie 对象创建顺序和空 access token 生成无效 Bearer 值的问题。
-
-文章详情增加想法类型兼容，并对作者头像、互动统计和回答所属问题使用空值安全访问。
-
-深色主题清理不再使用数百行全局选择器覆盖组件。`src/style.css` 仅保存少量语义变量，应用脚本把组件内浅色专用中性色替换为 Framework7 或项目主题变量。强调色、白色前景文字、视频黑色画布、代码块深色背景和截图导出背景不会被批量替换。
-
-HomeView 中此前为单页故障加入的滚动初始化和视口补页辅助代码会被移除，滚动生命周期由统一管理器处理；已修复的业务分页逻辑保留。
-
-上游同步不再排除 FeedCard、HotListCard、HomeView、TopicDetail、style.css 等业务源码。同步完成后会在最新上游源码上重新应用修复并运行校验，降低长期 fork 文件与上游分离的范围。
+启动后检查控制台无模块加载错误；`npm run build` 应无报错。

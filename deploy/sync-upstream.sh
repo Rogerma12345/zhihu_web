@@ -1,91 +1,89 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-UPSTREAM_URL="https://github.com/zhihulite/zhihu_web.git"
-UPSTREAM_BRANCH="main"
-STATE_FILE=".upstream-state"
-
-log() {
-  printf '[sync-upstream] %s\n' "$*"
-}
+UPSTREAM_URL="${UPSTREAM_URL:-https://github.com/zhihulite/zhihu_web.git}"
+UPSTREAM_BRANCH="${UPSTREAM_BRANCH:-main}"
+STATE_FILE="${STATE_FILE:-.upstream-state}"
 
 fail() {
-  printf '[sync-upstream] ERROR: %s\n' "$*" >&2
-  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-    printf '::error::%s\n' "$*" >&2
-  fi
-  exit 1
+    printf '[sync-upstream] %s\n' "$*" >&2
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        printf '::error::%s\n' "$*" >&2
+    fi
+    exit 1
 }
+
 emit_output() {
-  local key="$1"
-  local value="$2"
-  printf '%s=%s\n' "$key" "$value"
-  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-    printf '%s=%s\n' "$key" "$value" >> "$GITHUB_OUTPUT"
-  fi
+    local key="$1"
+    local value="$2"
+    printf '%s=%s\n' "$key" "$value"
+    if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+        printf '%s=%s\n' "$key" "$value" >> "$GITHUB_OUTPUT"
+    fi
 }
 
-read_state_value() {
-  local key="$1"
-  awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$STATE_FILE"
+state_value() {
+    local key="$1"
+    awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$STATE_FILE"
 }
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || fail "not inside a Git work tree"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || fail '当前目录不是 Git 工作区'
 cd "$repo_root"
-[[ -f "$STATE_FILE" ]] || fail "$STATE_FILE is missing"
-command -v rsync >/dev/null 2>&1 || fail "rsync is required"
-command -v tar >/dev/null 2>&1 || fail "tar is required"
-command -v python3 >/dev/null 2>&1 || fail "python3 is required"
+[[ -f "$STATE_FILE" ]] || fail "缺少 $STATE_FILE"
+[[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || fail '工作区存在未提交内容'
 
-state_sha="$(read_state_value upstream_sha)"
-[[ "$state_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "invalid upstream_sha in $STATE_FILE"
-state_sha="${state_sha,,}"
-git fetch --no-tags --depth=1 "$UPSTREAM_URL" "refs/heads/${UPSTREAM_BRANCH}"
+base_sha="$(state_value upstream_sha)"
+[[ "$base_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "$STATE_FILE 中的 upstream_sha 无效"
+base_sha="${base_sha,,}"
+original_head="$(git rev-parse HEAD)"
+
+git fetch --no-tags "$UPSTREAM_URL" "refs/heads/${UPSTREAM_BRANCH}" || fail '获取上游失败'
 upstream_sha="$(git rev-parse FETCH_HEAD)"
-[[ "$upstream_sha" =~ ^[0-9a-f]{40}$ ]] || fail "could not resolve upstream HEAD SHA"
+[[ "$upstream_sha" =~ ^[0-9a-f]{40}$ ]] || fail '无法解析上游提交'
 emit_output upstream_sha "$upstream_sha"
 
-if [[ "$upstream_sha" == "$state_sha" ]]; then
-  python3 deploy/verify-project-fixes.py "$repo_root"
-  python3 deploy/verify-network-request-fix.py "$repo_root"
-  python3 deploy/verify-article-display-fix.py "$repo_root"
-  emit_output upstream_changed false
-  exit 0
+if [[ "$upstream_sha" == "$base_sha" ]]; then
+    emit_output upstream_changed false
+    exit 0
 fi
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
-snapshot_dir="$tmp_dir/upstream"
-mkdir -p "$snapshot_dir"
-git archive --format=tar "$upstream_sha" | tar -xf - -C "$snapshot_dir"
+git cat-file -e "${base_sha}^{commit}" 2>/dev/null || fail '记录的上游基准不在当前上游历史中'
+git merge-base --is-ancestor "$base_sha" "$upstream_sha" || fail '上游历史已改写，需要人工重新确定同步基准'
 
-overlay_paths=(
-  "Dockerfile"
-  ".dockerignore"
-  "deploy"
-  ".upstream-state"
-  "SELFHOST.md"
-)
+protected_conflicts=()
+while IFS= read -r -d '' path; do
+    case "$path" in
+        Dockerfile|.dockerignore|.upstream-state|SELFHOST.md|deploy|deploy/*)
+            protected_conflicts+=("$path")
+            ;;
+    esac
+done < <(git diff --name-only -z --no-renames "$base_sha" "$upstream_sha")
 
-conflicts=()
-for path in "${overlay_paths[@]}"; do
-  if [[ -e "$snapshot_dir/$path" || -L "$snapshot_dir/$path" ]]; then
-    conflicts+=("$path")
-  fi
-done
-if ((${#conflicts[@]} > 0)); then
-  printf '[sync-upstream] ERROR: upstream now contains fork overlay path(s):\n' >&2
-  for path in "${conflicts[@]}"; do
-    printf '  - %s\n' "$path" >&2
-  done
-  exit 1
+if ((${#protected_conflicts[@]} > 0)); then
+    printf '[sync-upstream] 上游修改了分支部署文件：\n' >&2
+    printf '  %s\n' "${protected_conflicts[@]}" >&2
+    fail '请人工处理部署文件冲突'
 fi
 
-rsync   --archive   --delete   "--exclude=/.git/"   "--exclude=/.github/workflows/"   "--exclude=/Dockerfile"   "--exclude=/.dockerignore"   "--exclude=/deploy/"   "--exclude=/.upstream-state"   "--exclude=/SELFHOST.md"   "$snapshot_dir/"   "$repo_root/"
-python3 deploy/apply-fork-patches.py "$repo_root"
-python3 deploy/apply-network-request-fix.py "$repo_root"
-python3 deploy/apply-article-display-fix.py "$repo_root"
-python3 deploy/verify-project-fixes.py "$repo_root"
-python3 deploy/verify-network-request-fix.py "$repo_root"
-python3 deploy/verify-article-display-fix.py "$repo_root"
+patch_file="$(mktemp)"
+trap 'rm -f "$patch_file"' EXIT
+
+git diff --binary --full-index --no-renames "$base_sha" "$upstream_sha" -- . \
+    ':(exclude).github/workflows/**' \
+    ':(exclude)html/**' \
+    ':(exclude)Dockerfile' \
+    ':(exclude).dockerignore' \
+    ':(exclude)deploy/**' \
+    ':(exclude).upstream-state' \
+    ':(exclude)SELFHOST.md' > "$patch_file"
+
+if [[ -s "$patch_file" ]] && ! git apply --3way --index --whitespace=nowarn "$patch_file"; then
+    conflicts="$(git diff --name-only --diff-filter=U || true)"
+    git reset --hard "$original_head" >/dev/null
+    if [[ -n "$conflicts" ]]; then
+        printf '[sync-upstream] 未能自动合并以下上游改动：\n%s\n' "$conflicts" >&2
+    fi
+    fail '上游改动与分支修改冲突，工作区已恢复'
+fi
+
 emit_output upstream_changed true

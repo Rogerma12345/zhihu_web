@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import RecommendUserCard from './RecommendUserCard.vue'
+import RecommendUserCard from '@/components/home/RecommendUserCard.vue'
 
 const props = defineProps(['item'])
 const emit = defineEmits(['click', 'remove'])
@@ -12,7 +12,7 @@ const cardData = ref([...(props.item.data || [])])
 const handleUninterest = (userId) => {
   // 从当前列表中移除该用户卡片
   cardData.value = cardData.value.filter(card => card.actor.id !== userId)
-  
+
   // 如果所有卡片都被移除，则触发整个卡片列表的移除事件
   if (cardData.value.length === 0) {
     emit('remove', props.item)
@@ -27,14 +27,14 @@ const handleUninterest = (userId) => {
         <f7-card-header class="recommend-user-card-list-header">
             <h3 class="recommend-user-card-list-title">{{ item.title || '推荐关注' }}</h3>
         </f7-card-header>
-        
+
         <!-- 使用网格布局实现一行两个用户卡片 -->
         <f7-card-content class="recommend-user-card-list-content">
             <div class="recommend-user-grid">
                 <!-- 遍历卡片数据渲染推荐用户卡片 -->
-                <RecommendUserCard 
-                    v-for="(card, index) in cardData" 
-                    :key="index"
+                <RecommendUserCard
+                    v-for="card in cardData"
+                    :key="card.actor?.id"
                     :item="card"
                     @uninterest="handleUninterest"
                     @click="(item) => $emit('click', item)"

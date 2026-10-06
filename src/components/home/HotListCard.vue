@@ -1,51 +1,23 @@
 <script setup>
-const props = defineProps(['item', 'rank'])
-
+const props = defineProps(['item', 'rank', 'hideImage', 'hideMetrics'])
 defineEmits(['click'])
 </script>
 
 <template>
-    <f7-card
-        class="hot-card"
-        @click="$emit('click', item)"
-    >
+    <f7-card class="hot-card" @click="$emit('click', item)">
         <f7-card-content class="hot-card-inner">
             <div class="hot-rank-col">
-                <span
-                    class="rank-num"
-                    :class="'top-' + rank"
-                >
-                    {{ rank }}
-                </span>
+                <span class="rank-num" :class="'top-' + rank">{{ rank }}</span>
             </div>
-
             <div class="hot-content-col">
-                <div class="hot-title">
-                    {{ item.title }}
-                </div>
-
-                <div
-                    v-if="item.metricsArea"
-                    class="hot-metrics"
-                >
-                    <f7-icon
-                        ios="f7:flame_fill"
-                        md="material:local_fire_department"
-                        size="14"
-                        class="hot-icon"
-                    />
+                <div class="hot-title">{{ item.title }}</div>
+                <div class="hot-metrics" v-if="item.metricsArea && !hideMetrics">
+                    <f7-icon ios="f7:flame_fill" md="material:local_fire_department" size="14" class="hot-icon" />
                     <span>{{ item.metricsArea }}</span>
                 </div>
             </div>
-
-            <div
-                v-if="item.thumbnailSrc"
-                class="hot-img-wrap"
-            >
-                <img
-                    :src="item.thumbnailSrc"
-                    class="hot-thumb"
-                />
+            <div v-if="item.thumbnailSrc && !hideImage" class="hot-img-wrap">
+                <img :src="item.thumbnailSrc" class="hot-thumb" />
             </div>
         </f7-card-content>
     </f7-card>
@@ -78,27 +50,18 @@ defineEmits(['click'])
     gap: 6px;
 }
 
-/*
- * 热度等辅助信息使用 Framework7 的次级文字颜色。
- */
 .hot-metrics {
     display: flex;
     align-items: center;
     gap: 4px;
     font-size: 12px;
-    color: var(
-        --f7-card-footer-text-color,
-        var(--f7-text-color)
-    );
+    color: var(--app-sub-text);
 }
 
 .rank-num {
     font-size: 20px;
     font-weight: 900;
-    color: var(
-        --f7-card-footer-text-color,
-        var(--f7-text-color)
-    );
+    color: var(--app-faint-text);
     font-style: italic;
     line-height: 1;
 }
@@ -120,7 +83,6 @@ defineEmits(['click'])
     font-weight: 700;
     line-height: 1.4;
     color: var(--f7-text-color);
-
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
@@ -139,6 +101,14 @@ defineEmits(['click'])
     height: 100%;
     object-fit: cover;
     border-radius: 4px;
+}
+
+.hot-metrics {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--app-sub-text);
 }
 
 .hot-icon {

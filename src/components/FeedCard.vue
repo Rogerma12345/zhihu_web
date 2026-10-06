@@ -1,32 +1,42 @@
 <script setup>
-import { htmlToPlainText } from '../utils/content-text.js';
+import MetricRow from '@/components/MetricRow.vue';
+import { ICON } from '@/core/icons.js';
+import { htmlToPlainText } from '@/utils/content-text.js';
+
 const props = defineProps({
     item: Object,
+    dismissible: Boolean,
 })
+const emit = defineEmits(['click', 'dislike'])
 
-defineEmits(['click'])
+// 长按走 Framework7 原生 taphold（app.touch.tapHold），右键走 contextmenu；
+// tapHoldPreventClicks 默认开启，长按后不会再触发 click
+const onContextMenu = (e) => {
+    if (!props.dismissible) return
+    e.preventDefault()
+    emit('dislike', props.item)
+}
+
+const onTaphold = () => {
+    if (!props.dismissible) return
+    emit('dislike', props.item)
+}
 </script>
 
 <template>
-    <f7-card class="feed-card" :class="[$attrs.class]" @click="$emit('click', item)">
+    <f7-card class="feed-card" :class="[$attrs.class, dismissible ? 'dismissible' : '']" @click="$emit('click', item)"
+        @taphold="onTaphold" @contextmenu="onContextMenu">
         <f7-card-content>
             <div v-if="item.image" class="card-image-wrap">
                 <img :src="item.image" class="content-img" />
             </div>
-
             <div class="title">{{ htmlToPlainText(item.title) }}</div>
 
             <div v-if="item.bottomText" class="bottom-text-line">
                 {{ item.bottomText }}
             </div>
-
             <div v-else class="author-excerpt-line">
-                <span
-                    v-if="!item.noAuthorPrefix"
-                    class="author-label"
-                >
-                    {{ item.authorName || '匿名用户' }}：
-                </span>
+                <span class="author-label" v-if="!item.noAuthorPrefix">{{ item.authorName || '匿名用户' }}：</span>
                 <span class="excerpt-text">{{ htmlToPlainText(item.excerpt) }}</span>
             </div>
         </f7-card-content>
@@ -35,26 +45,10 @@ defineEmits(['click'])
             <div v-if="item.footer" class="card-footer-text">
                 {{ item.footer }}
             </div>
-
-            <div v-else class="card-footer-metrics">
-                <span class="metric-item">
-                    <f7-icon
-                        ios="f7:hand_thumbsup"
-                        md="material:thumb_up"
-                        size="14"
-                    />
-                    {{ item.metrics?.likes || 0 }}
-                </span>
-
-                <span class="metric-item">
-                    <f7-icon
-                        ios="f7:bubble_left"
-                        md="material:chat_bubble"
-                        size="14"
-                    />
-                    {{ item.metrics?.comments || 0 }}
-                </span>
-            </div>
+            <MetricRow v-else :items="[
+                { icon: ICON.like, value: item.metrics?.likes },
+                { icon: ICON.comment, value: item.metrics?.comments },
+            ]" />
         </f7-card-footer>
     </f7-card>
 </template>
@@ -62,24 +56,17 @@ defineEmits(['click'])
 <style scoped>
 .feed-card {
     cursor: pointer;
-    margin: 8px 16px !important;
+    margin: var(--app-card-gap, 8px) var(--app-page-margin, 16px) !important;
 }
 
-.user-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.feed-card :deep(.card-content) {
+    padding: var(--app-card-padding, 16px);
 }
 
-.mini-avatar {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-}
-
-.author-name {
-    font-size: 14px;
-    font-weight: 500;
+.feed-card.dismissible {
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .card-image-wrap {
@@ -103,6 +90,7 @@ defineEmits(['click'])
 .author-excerpt-line,
 .bottom-text-line {
     font-size: 14px;
+    color: var(--f7-text-color);
     line-height: 1.5;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -111,16 +99,8 @@ defineEmits(['click'])
     overflow: hidden;
 }
 
-.author-excerpt-line {
-    color: var(--f7-text-color);
-    opacity: 0.76;
-}
-
 .bottom-text-line {
-    color: var(
-        --f7-card-footer-text-color,
-        var(--f7-text-color)
-    );
+    color: var(--app-sub-text);
 }
 
 .title :deep(p),
@@ -138,29 +118,6 @@ defineEmits(['click'])
 
 .author-label {
     font-weight: 500;
-    color: inherit;
-}
-
-.card-footer-text {
-    color: var(
-        --f7-card-footer-text-color,
-        var(--f7-text-color)
-    );
-}
-
-.card-footer-metrics {
-    display: flex;
-    gap: 16px;
-    font-size: 12px;
-    color: var(
-        --f7-card-footer-text-color,
-        var(--f7-text-color)
-    );
-}
-
-.metric-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+    color: var(--app-sub-text);
 }
 </style>

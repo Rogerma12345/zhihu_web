@@ -2,27 +2,18 @@
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
+
+  /* 原生表单控件与滚动条按应用主题取色，不跟系统偏好（应用内可手动切深浅） */
   color-scheme: light;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  --app-text-secondary: #666;
-  --app-text-muted: #8e8e93;
-  --app-border-color: rgba(0, 0, 0, 0.12);
-  --app-soft-bg: #f5f5f5;
-  --app-placeholder-bg: #f0f0f0;
-  --app-surface-bg: var(--f7-card-bg-color, var(--f7-page-bg-color, #fff));
 }
 
-.dark {
+html.dark {
   color-scheme: dark;
-  --app-text-secondary: rgba(255, 255, 255, 0.72);
-  --app-text-muted: rgba(255, 255, 255, 0.56);
-  --app-border-color: rgba(255, 255, 255, 0.14);
-  --app-soft-bg: rgba(255, 255, 255, 0.06);
-  --app-placeholder-bg: rgba(255, 255, 255, 0.08);
-  --app-surface-bg: var(--f7-card-bg-color, var(--f7-page-bg-color, #1c1c1d));
 }
 
 html,
@@ -30,9 +21,11 @@ body {
   height: 100%;
   overflow: hidden;
   margin: 0;
+  /**禁用字体缩放**/
   -webkit-text-size-adjust: none;
 }
 
+/**隐藏未加载的组件**/
 :not(:defined) {
   display: none;
 }
@@ -57,17 +50,4 @@ body {
 
 .tabs-auto-page-content .tab .page-content {
   padding-top: 0 !important;
-}
-
-.hot-list {
-  background: var(--f7-page-bg-color) !important;
-  --f7-list-bg-color: var(--f7-page-bg-color);
-}
-
-.recommend-section-tabs {
-  --f7-toolbar-bg-color: var(--f7-bars-bg-color);
-}
-
-.app-surface-bg {
-  background-color: var(--app-surface-bg) !important;
 }
