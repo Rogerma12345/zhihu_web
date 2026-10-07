@@ -47,7 +47,7 @@ jobs:
             echo "upstream_sha=${upstream_sha,,}" >> "$GITHUB_OUTPUT"
             echo "upstream_changed=false" >> "$GITHUB_OUTPUT"
           else
-            ./deploy/sync-upstream.sh
+            bash ./deploy/sync-upstream.sh
           fi
 
       - name: 判断是否构建
