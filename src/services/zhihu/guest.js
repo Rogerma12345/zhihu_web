@@ -1,3 +1,5 @@
+// src/services/zhihu/guest.js
+// 游客凭证申请、签名生成及 ZST 会话初始化。
 import { tokenManager } from '@/services/auth.js'
 import { getLAESInstance } from '@/services/zhihu/laes.js'
 import CryptoJS from 'crypto-js'
@@ -69,7 +71,6 @@ function generateZhihuSignature(apiVersion, udid, backupDeviceId, deviceInfo, cl
   } else {
     signatureBase = `${clientId}${apiVersion}${deviceInfo}${udid}${timestamp}`
   }
-  signatureBase = '13552app_build=21210&app_ticket=fetch+empty&app_version=10.12.0&bt_ck=1&bundle_id=com.zhihu.android&cp_ct=8&cp_fq=3000000&cp_tp=0&cp_us=35&d_n=Pixel9&fr_mem=154&fr_st=57000&latitude=0&longitude=0&mcc=cn&nt_st=1&oaid=228BACA61B39B3F2949C3E2A065FAD46&ph_br=Google&ph_md=Pixel+9&ph_os=Android+15&ph_sn=unknown&pre_install=undefined&pvd_nm=%E4%B8%AD%E5%9B%BD%E7%A7%BB%E5%8A%A8&tt_mem=507&tt_st=124000&tz_of=28800&zx_expired=01769316411'
   const hash = CryptoJS.HmacSHA1(signatureBase, secretKey)
   return hash.toString(CryptoJS.enc.Hex)
 }
@@ -217,7 +218,7 @@ export async function requestGuestCredential() {
 
   // 会话中重取（401 自愈、退出登录）时请求实例已存在，要立刻换上这份新凭证
   const { getZhihuInstance, updateZhihuLoginData } = await import('@/services/zhihu/module.js')
-  if (current && getZhihuInstance()) updateZhihuLoginData(current)
+  if (current && getZhihuInstance()) updateZhihuLoginData(current, zsts)
 
   return current
 }
