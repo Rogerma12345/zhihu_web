@@ -115,6 +115,9 @@ class ZhihuRequest {
         requireWebSignature = false,
         signal = null,
         noCredentialRebuild = false,
+        legacySearchRequest = false,
+        suppressApiErrorToast = false,
+        suppressApiErrorRedirect = false,
     } = {}) {
         method = method.toUpperCase();
         url = normalizeZhihuUrl(url);
@@ -154,7 +157,8 @@ class ZhihuRequest {
             };
             delete requestHeaders.Cookie;
             delete requestHeaders.cookie;
-            if (finalCookie) requestHeaders.Cookie = finalCookie;
+            // 旧版搜索即使没有 Cookie 也传递空 Cookie；GM 层据此使用匿名 Cookie 隔离。
+            if (finalCookie || legacySearchRequest) requestHeaders.Cookie = finalCookie;
 
             if (isWebRequest) {
                 delete requestHeaders.Authorization;
@@ -196,6 +200,8 @@ class ZhihuRequest {
             assemble,
             ...(signal && { signal }),
             ...(noCredentialRebuild && { noCredentialRebuild }),
+            ...(suppressApiErrorToast && { suppressApiErrorToast }),
+            ...(suppressApiErrorRedirect && { suppressApiErrorRedirect }),
         };
 
         switch (method) {

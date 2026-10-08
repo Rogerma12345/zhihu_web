@@ -191,11 +191,11 @@ async function checkedUnifiedFetch(url, options = {}) {
 		const apiErrorMessage = decodedContent?.error?.message;
 
 		if (code === 403) {
-			if (apiErrorMessage) {
+			if (apiErrorMessage && !options.suppressApiErrorToast) {
 				f7.toast.show({ text: apiErrorMessage, position: 'center' });
 				notified = true;
 			}
-			if (decodedContent?.error?.redirect) {
+			if (decodedContent?.error?.redirect && !options.suppressApiErrorRedirect) {
 				blockedUntilRefresh = true;
 				window.location.href = decodedContent.error.redirect;
 			}
@@ -236,14 +236,15 @@ async function checkedUnifiedFetch(url, options = {}) {
 					authLostNotified = false;
 				});
 			}
-		} else if (code === 400 && apiErrorMessage) {
+		} else if (code === 400 && apiErrorMessage && !options.suppressApiErrorToast) {
 			f7.toast.show({ text: apiErrorMessage, position: 'center' });
 			notified = true;
 		}
 
 		if (code < 200 || code >= 300) {
-			const err = new Error(describeHttpStatus(code));
+			const err = new Error(apiErrorMessage || describeHttpStatus(code));
 			err.status = code;
+			if (decodedContent?.error?.code != null) err.apiCode = Number(decodedContent.error.code);
 			if (notified) err.notified = true;
 			throw err;
 		}
@@ -251,7 +252,10 @@ async function checkedUnifiedFetch(url, options = {}) {
 		// 风控也会以 200 回正文（{"error":{"code":40362,…}}）：不能当成功数据交给调用方，
 		// 否则列表只会显示"暂无内容"。消息原样抛出，由调用方的提示链路带出中文原因
 		if (decodedContent?.error?.code) {
-			throw new Error(decodedContent.error.message || '请求被知乎拒绝');
+			const err = new Error(decodedContent.error.message || '请求被知乎拒绝');
+			err.apiCode = Number(decodedContent.error.code);
+			err.status = code;
+			throw err;
 		}
 
 		return response;

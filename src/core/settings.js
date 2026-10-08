@@ -6,6 +6,8 @@ import { KEYS, getJSON, setJSON } from '@/services/storage.js';
 import { debounce } from '@/utils/timing.js';
 
 // key → 默认值。新增设置项只需在此加一行。
+const OLD_BING_DEFAULT = 'https://www.bing.com/search?q=site%3Azhihu.com%20';
+const GOOGLE_SEARCH = 'https://www.google.com/search?q=site%3Azhihu.com%20';
 const SCHEMA = {
     blockWords: '',        // 屏蔽词，逗号/换行分隔；命中标题或摘要的 feed 条目被过滤
     hotHideImage: false,   // 热榜隐藏封面
@@ -24,7 +26,7 @@ const SCHEMA = {
     // 推荐流
     dedupWindow: 100,      // 去重记住的已展示条数，0 为关闭
     // 搜索
-    searchEngineUrl: 'https://www.bing.com/search?q=site%3Azhihu.com%20', // 站外搜索兜底模板
+    searchEngineUrl: GOOGLE_SEARCH, // 站外搜索兜底模板
     closeHotSearch: false, // 关闭搜索页「全站热搜」区块
     // 推荐分区（feed-root/sections）
     hideAllSection: false,       // 隐藏「全站」分区
@@ -36,7 +38,11 @@ const SCHEMA = {
 };
 
 const load = () => {
-    return { ...SCHEMA, ...getJSON(KEYS.settings, {}) };
+    const stored = getJSON(KEYS.settings, {});
+    const saved = stored && typeof stored === 'object' && !Array.isArray(stored) ? { ...stored } : {};
+    // 只迁移旧版 Bing 默认值，不覆盖用户自己配置的其他搜索引擎。
+    if (saved.searchEngineUrl === OLD_BING_DEFAULT) saved.searchEngineUrl = GOOGLE_SEARCH;
+    return { ...SCHEMA, ...saved };
 };
 
 // 全局单例响应式设置，任意组件 import 即共享

@@ -1,6 +1,5 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
-import { f7 } from 'framework7-vue';
 
 import TabLayout from '@/components/TabLayout.vue';
 import FeedCard from '@/components/FeedCard.vue';
@@ -24,6 +23,10 @@ const searchbarRef = ref(null);
 const searchHistory = ref([]);
 const hotSearches = ref([]);
 const isLoadingHotSearches = ref(false);
+const hotSearchError = ref('');
+const searchErrors = ref({});
+const searchSuggestions = ref([]);
+const showSuggestions = ref(false);
 
 // 搜索标签定义
 const SEARCH_TABS = [
@@ -39,37 +42,27 @@ const SEARCH_TABS = [
 
 const tabRefs = ref({});
 
+// 搜索回归到重构前的 Android 接口及请求签名方式（登录与游客一致）。
+const SEARCH_REQUEST_OPTIONS = {
+    legacySearchRequest: true,
+    suppressApiErrorToast: true,
+    suppressApiErrorRedirect: true,
+};
 const searchRequestFor = (tabId) => {
     const isRealTime = tabId === 'realtime';
     const type = isRealTime ? 'general' : tabId;
-    const params = new URLSearchParams({
-        gk_version: 'gz-gaokao',
-        q: query.value,
-        t: type,
-        search_source: 'History',
-        is_real_time: isRealTime ? '1' : '0',
-        correction: '1',
-        advert_count: '',
-        show_all_topics: '0',
-        pin_flow: 'false',
-        restricted_scene: '',
-        restricted_field: '',
-        restricted_value: '',
-        limit: '20',
-        lc_idx: '0',
-    });
+    // 保留旧版参数顺序和 encodeURIComponent 编码方式，避免改变签名输入。
+    const url = `https://api.zhihu.com/search_v3?gk_version=gz-gaokao&q=${encodeURIComponent(query.value)}&t=${type}&search_source=History&is_real_time=${isRealTime ? '1' : '0'}&correction=1&advert_count=&show_all_topics=0&pin_flow=false&restricted_scene=&restricted_field=&restricted_value=&limit=20&lc_idx=0`;
+    return { url, options: SEARCH_REQUEST_OPTIONS };
+};
 
-    if ($http.canSignWebRequests()) {
-        return {
-            url: `https://www.zhihu.com/api/v4/search_v3?${params.toString()}`,
-            options: { requestMode: 'web', requireWebSignature: true },
-        };
-    }
-
-    return {
-        url: `https://api.zhihu.com/search_v3?${params.toString()}`,
-        options: {},
-    };
+const describeSearchError = (error) => {
+    const apiCode = Number(error?.apiCode);
+    if (apiCode === 40353) return '知乎要求登录后才能继续搜索（40353），可尝试 Google 站外搜索';
+    if (apiCode === 40362) return '知乎暂时限制了本次搜索请求（40362），可稍后重试或使用 Google';
+    if (error?.status === 403) return '知乎拒绝了本次搜索请求（HTTP 403）';
+    if (error?.status === 401) return '游客凭证失效或未获授权（HTTP 401），请稍后重试';
+    return error?.message || '搜索失败，请检查网络后重试';
 };
 
 // 搜索原始项 → 卡片视图模型；无作者信息或非目标类型返回 null 交给引擎过滤
@@ -141,11 +134,15 @@ const {
     tabs: () => SEARCH_TABS.map((t) => t.id),
     fillEl: (tabId) => tabRefs.value[tabId]?.$el,
     fetch: (tabId, signal) => {
+        delete searchErrors.value[tabId];
         const { url, options } = searchRequestFor(tabId);
         return $http.get(url, { ...options, signal });
     },
     map: mapSearchItem,
-    onError: () => f7.toast.create({ text: '搜索失败' }).open(),
+    onError: (error, tabId) => {
+        console.error(`搜索失败 (${tabId}):`, error);
+        searchErrors.value[tabId] = describeSearchError(error);
+    },
 });
 
 const { hasCache } = usePageState({
@@ -165,47 +162,64 @@ const { hasCache } = usePageState({
     }
 });
 
-// 搜索建议：F7 Autocomplete 下拉模式挂在 searchbar 输入框上
-const suggestionSource = (q, render) => {
-    const term = q.trim();
-    if (!term) {
-        render([]);
-        return;
-    }
-    $http.get(`https://www.zhihu.com/api/v4/search/suggest?q=${encodeURIComponent(term)}`, { requestMode: 'web' })
-        .then((res) => render((res?.suggest || []).map((s, i) => ({ id: `s${i}`, text: s.query || String(s) }))))
-        .catch(() => render([]));
+// 恢复旧版搜索建议：网页地址沿用 Android 请求链路，而非网页签名模式。
+const SUGGESTION_DELAY_MS = 300;
+let suggestionTimer = null;
+let suggestionEpoch = 0;
+let searchInputEl = null;
+let submitting = false;
+
+const hideSuggestions = () => {
+    suggestionEpoch += 1;
+    clearTimeout(suggestionTimer);
+    searchSuggestions.value = [];
+    showSuggestions.value = false;
 };
 
-let suggestions = null;
+const debouncedSuggestions = (value) => {
+    const term = String(value || '').trim();
+    hideSuggestions();
+    if (!term) return;
+    const epoch = suggestionEpoch;
+    suggestionTimer = setTimeout(async () => {
+        try {
+            const url = `https://www.zhihu.com/api/v4/search/suggest?q=${encodeURIComponent(term)}`;
+            const data = await $http.get(url, SEARCH_REQUEST_OPTIONS);
+            if (epoch !== suggestionEpoch || query.value.trim() !== term) return;
+            searchSuggestions.value = Array.isArray(data?.suggest)
+                ? data.suggest.map((item) => ({ query: item?.query || (typeof item === 'string' ? item : '') })).filter((item) => item.query)
+                : [];
+            showSuggestions.value = searchSuggestions.value.length > 0;
+        } catch (error) {
+            if (epoch !== suggestionEpoch) return;
+            console.warn('搜索建议不可用:', describeSearchError(error));
+            searchSuggestions.value = [];
+            showSuggestions.value = false;
+        }
+    }, SUGGESTION_DELAY_MS);
+};
+
+// 回车只提交输入框原文；点选建议仅由建议项点击提交，二者互不重复触发。
+const handleSearchEnter = (event) => {
+    if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void handleSearch(query.value);
+};
 
 onMounted(() => {
-    const inputEl = searchbarRef.value?.$el?.querySelector('input');
-    if (inputEl) {
-        suggestions = f7.autocomplete.create({
-            inputEl,
-            dropdown: true,
-            source: suggestionSource,
-            on: {
-                change: (ac, value) => {
-                    const picked = Array.isArray(value) ? value[0] : value;
-                    const text = typeof picked === 'string' ? picked : picked?.text;
-                    if (text) handleSearch(text);
-                },
-            },
-        });
-        inputEl.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && query.value.trim()) handleSearch();
-        });
-    }
+    searchInputEl = searchbarRef.value?.$el?.querySelector('input');
+    searchInputEl?.addEventListener('keydown', handleSearchEnter, true);
     if (!hasCache.value) {
-        nextTick(() => inputEl?.focus());
+        nextTick(() => searchInputEl?.focus());
         fetchHotSearches();
         loadSearchHistory();
     }
 });
-
-onUnmounted(() => suggestions?.destroy?.());
+onUnmounted(() => {
+    hideSuggestions();
+    searchInputEl?.removeEventListener('keydown', handleSearchEnter, true);
+});
 
 // 加载搜索历史
 const loadSearchHistory = () => {
@@ -226,55 +240,57 @@ const saveSearchHistory = (text) => {
     setJSON(KEYS.searchHistory, searchHistory.value);
 };
 
-// 获取热搜数据
+// 热搜恢复重构前的 Android 接口与数据结构。
 const fetchHotSearches = async () => {
+    if (isLoadingHotSearches.value) return;
     isLoadingHotSearches.value = true;
+    hotSearchError.value = '';
     try {
-        const data = await $http.get('https://www.zhihu.com/api/v4/search/hot_search', { requestMode: 'web' });
-        const words = data?.top_search?.words || [];
-        hotSearches.value = words.map((item, index) => ({
+        const data = await $http.get('https://api.zhihu.com/search/hot_search', SEARCH_REQUEST_OPTIONS);
+        const entries = Array.isArray(data?.hot_search_queries) ? data.hot_search_queries : [];
+        hotSearches.value = entries.map((item, index) => ({
             rank: index + 1,
-            title: item.display_query || item.query || '未知话题',
-            hot: item.heat_score ? `${Math.floor(item.heat_score / 10000)}万` : '',
+            title: item.query || item.real_query || '未知话题',
+            hot: item.hot_show || (Number.isFinite(Number(item.hot)) ? `${Math.floor(Number(item.hot) / 10000)}万` : ''),
         }));
     } catch (error) {
         console.error('获取热搜数据失败:', error);
-        hotSearches.value = [
-            { rank: 1, title: '热搜加载失败', hot: '0' }
-        ];
+        hotSearches.value = [];
+        hotSearchError.value = describeSearchError(error);
     } finally {
         isLoadingHotSearches.value = false;
     }
 };
-
-
-
 // 处理搜索
 const handleSearch = async (text = query.value) => {
-    if (!text.trim()) return;
+    const term = String(text || '').trim();
+    if (!term || submitting) return;
+    submitting = true;
+    hideSuggestions();
+    try {
+        // 知乎 URL 继续按站内路由处理，普通外链仍在新标签页打开。
+        const urlResult = await parseZhihuUrl(term);
+        if (urlResult.type !== 'error' && urlResult.type !== 'browser') {
+            query.value = '';
+            await handleZhihuUrl(props.f7router, term);
+            return;
+        }
+        if (urlResult.type === 'browser' && urlResult.id) {
+            openLink(urlResult.id);
+            return;
+        }
 
-    // 检查输入是否是知乎URL
-    const urlResult = await parseZhihuUrl(text);
-    if (urlResult.type !== 'error' && urlResult.type !== 'browser') {
-        // 是知乎URL，清空输入框并处理
-        query.value = '';
-        await handleZhihuUrl(props.f7router, text);
-        return;
+        query.value = term;
+        isSearching.value = true;
+        saveSearchHistory(term);
+        SEARCH_TABS.forEach((tab) => {
+            delete searchErrors.value[tab.id];
+            resetTab(tab.id);
+        });
+        await refreshTab(activeTab.value);
+    } finally {
+        submitting = false;
     }
-
-    // 外部链接直接浏览器打开
-    if (urlResult.type === 'browser' && urlResult.id) {
-        openLink(urlResult.id);
-        return;
-    }
-
-    // 普通搜索
-    query.value = text;
-    isSearching.value = true;
-    saveSearchHistory(text);
-    // 新查询重置全部 tab：当前 tab 立即取，其余切到时懒加载
-    SEARCH_TABS.forEach((t) => resetTab(t.id));
-    refreshTab(activeTab.value);
 };
 
 // 站内搜索兜底：用配置的搜索引擎模板跳到站外
@@ -320,6 +336,7 @@ const handleTabChange = (tabId) => {
 
 // 处理输入框清除
 const handleInputClear = () => {
+    hideSuggestions();
     query.value = '';
     isSearching.value = false;
     searchbarRef.value?.$el?.querySelector('input')?.focus();
@@ -344,6 +361,7 @@ const handleTabLoadMore = (tabId) => {
                 </f7-link>
             </f7-nav-left>
             <f7-searchbar ref="searchbarRef" custom-search v-model:value="query"
+                @searchbar:search="debouncedSuggestions($event.value)"
                 @searchbar:clear="handleInputClear" placeholder="搜索..." :disable-button="false"
                 clear-button></f7-searchbar>
             <f7-nav-right>
@@ -351,8 +369,15 @@ const handleTabLoadMore = (tabId) => {
             </f7-nav-right>
         </f7-navbar>
 
+        <!-- 旧版建议列表：仅点击建议项才使用该建议提交搜索。 -->
+        <div v-if="showSuggestions && searchSuggestions.length" class="search-suggestions-container">
+            <f7-list>
+                <f7-list-item v-for="(item, index) in searchSuggestions" :key="`${item.query}-${index}`" link
+                    :title="item.query" @click="handleSearch(item.query)" />
+            </f7-list>
+        </div>
         <!-- 搜索结果视图 -->
-        <div v-if="isSearching" class="results-container">
+        <div v-if="isSearching && !showSuggestions" class="results-container">
             <TabLayout :tabs="SEARCH_TABS" :onChange="handleTabChange" :scrollable="true" :fixed="false"
                 :auto-page-content="false">
                 <!-- 每个标签页的内容 -->
@@ -365,12 +390,28 @@ const handleTabLoadMore = (tabId) => {
                                 :item="item" @click="$handleCardClick(f7router, item)"
                                 class="result-card margin-bottom" />
 
+                            <div v-if="searchErrors[tab.id]" class="text-color-gray text-align-center padding">
+                                {{ searchErrors[tab.id] }}
+                                <f7-button outline round small @click="loadMoreTab(tab.id)">重试加载</f7-button>
+                            </div>
                             <div v-if="!tabResults[tab.id]?.hasMore"
                                 class="end-message text-color-gray text-align-center padding">
                                 已加载全部搜索结果
                             </div>
                         </div>
 
+                        <!-- 失败不是无结果：单独展示服务端状态与 Google 入口。 -->
+                        <div v-else-if="searchErrors[tab.id] && !resultsLoading[tab.id]"
+                            class="empty-state display-flex flex-direction-column align-items-center justify-content-center padding-vertical">
+                            <f7-icon ios="f7:exclamationmark_circle" md="material:error_outline" size="32" />
+                            <span class="empty-text margin-top">{{ searchErrors[tab.id] }}</span>
+                            <f7-button class="margin-top" outline round small @click="refreshTab(tab.id)">
+                                重试站内搜索
+                            </f7-button>
+                            <f7-button class="margin-top" outline round small @click="handleExternalSearch">
+                                用 {{ searchEngineName }} 站外搜索
+                            </f7-button>
+                        </div>
                         <!-- 无结果且加载完成：显示空状态 -->
                         <div v-else-if="!resultsLoading[tab.id]"
                             class="empty-state display-flex flex-direction-column align-items-center justify-content-center padding-vertical">
@@ -404,6 +445,7 @@ const handleTabLoadMore = (tabId) => {
 
             <!-- 热搜列表 -->
             <div class="section" v-if="!settings.closeHotSearch">
+                <div v-if="hotSearchError" class="text-color-gray margin-bottom">{{ hotSearchError }}</div>
                 <div class="section-header display-flex justify-content-space-between align-items-center margin-bottom">
                     <span class="section-title font-weight-bold">全站热搜</span>
                     <f7-link icon-only @click="fetchHotSearches" :class="{ 'spinning': isLoadingHotSearches }">
