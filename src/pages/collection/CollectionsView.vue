@@ -16,10 +16,13 @@ const props = defineProps({
 
 const activeTab = ref(props.f7route?.params?.defaultTab || 'mine');
 const { currentUser } = useUser();
-const routeUserId = props.f7route?.params?.userId;
+const routeUserId = props.f7route?.params?.userId || '';
+const currentUserId = computed(() => currentUser.value?.id || '');
 const currentUserToken = computed(() => currentUser.value?.url_token || currentUser.value?.urlToken || '');
-const effectiveUserToken = computed(() => routeUserId || currentUserToken.value);
-const isOwnProfile = computed(() => !routeUserId || [currentUser.value?.id, currentUserToken.value].includes(routeUserId));
+const isOwnProfile = computed(() => !routeUserId ||
+    routeUserId === currentUserId.value || routeUserId === currentUserToken.value);
+const effectiveUserId = computed(() =>
+    (isOwnProfile.value && currentUserId.value) || routeUserId || '');
 
 const scrollElements = {};
 const setScrollRef = (elRef, id) => {
@@ -27,10 +30,18 @@ const setScrollRef = (elRef, id) => {
 };
 
 const tabs = computed(() => {
-    const token = encodeURIComponent(effectiveUserToken.value || '');
+    const uid = encodeURIComponent(effectiveUserId.value);
     const baseTabs = [
-        { id: 'mine', label: '收藏', url: token ? `https://www.zhihu.com/api/v4/members/${token}/favlists` : null, web: true },
-        { id: 'following', label: '关注', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-favlists` : null, web: true }
+        {
+            id: 'mine',
+            label: '收藏',
+            url: uid ? `https://api.zhihu.com/people/${uid}/collections_v2` : null
+        },
+        {
+            id: 'following',
+            label: '关注',
+            url: uid ? `https://api.zhihu.com/people/${uid}/following_collections` : null
+        }
     ];
     if (isOwnProfile.value) {
         baseTabs.push({ id: 'recommend', label: '推荐内容', url: 'https://api.zhihu.com/explore/collections' });
@@ -47,10 +58,7 @@ const { tabs: tabData, loading: tabLoading, ensure, refresh, loadMore, ensureLoa
     fetch: (tabId, signal) => {
         const tab = tabFor(tabId);
         if (!tab?.url) return null;
-        const options = tab.web
-            ? { requestMode: 'web', requireWebSignature: true, signal }
-            : { signal };
-        return $http.get(`${tab.url}?limit=20`, options);
+        return $http.get(`${tab.url}?limit=20`, { isWWW: tabId !== 'recommend', signal });
     },
     map: (item, tabId) => mapItem(tabId, item),
 });
@@ -138,20 +146,18 @@ const onEditSaved = () => {
 };
 
 onMounted(() => {
-    if (!hasCache.value && effectiveUserToken.value) {
+    if (!hasCache.value && effectiveUserId.value) {
         ensureLoaded(activeTab.value);
     }
 });
 
-watch(effectiveUserToken, (newId) => {
-    if (newId) {
-        tabs.value.forEach(tab => reset(tab.id));
-        ensureLoaded(activeTab.value);
-    }
+watch(effectiveUserId, (newId) => {
+    tabs.value.forEach(tab => reset(tab.id));
+    if (newId) ensureLoaded(activeTab.value);
 });
 
 watch(activeTab, (newTab) => {
-    ensureLoaded(newTab);
+    if (tabFor(newTab)?.url) ensureLoaded(newTab);
 });
 
 const showSearchPrompt = () => {
@@ -160,7 +166,7 @@ const showSearchPrompt = () => {
         '搜索内容',
         (value) => {
             if (value.trim()) {
-                props.f7router.navigate(`/search-result/collection/${value}/${effectiveUserToken.value}`);
+                props.f7router.navigate(`/search-result/collection/${value}/${currentUserToken.value || effectiveUserId.value}`);
             } else {
                 f7.toast.show({ text: '搜索关键词不能为空' });
             }
@@ -232,7 +238,8 @@ const showSearchPrompt = () => {
                     </div>
                     <LoadMoreFooter :has-more="tabData[tab.id].hasMore" :length="tabData[tab.id].list.length" />
                     <EmptyState v-if="!tabLoading[tab.id] && tabData[tab.id].list.length === 0"
-                        icon="folder_badge_plus" text="还没有收藏任何内容" />
+                        :icon="tabData[tab.id].error ? 'exclamationmark_triangle' : 'folder_badge_plus'"
+                        :text="tabData[tab.id].error || '还没有收藏任何内容'" />
                 </f7-page-content>
             </f7-tab>
         </f7-tabs>

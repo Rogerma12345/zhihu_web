@@ -27,7 +27,8 @@ const props = defineProps({
 });
 
 const userId = props.f7route?.params?.id;
-const activeTab = ref('activities');
+const requestedTab = props.f7route?.params?.tab || '';
+const activeTab = ref(requestedTab || 'activities');
 const answerSort = ref('created');
 
 const tabs = ref([]);
@@ -157,7 +158,8 @@ const fetchTabs = async () => {
         processedTabs.forEach((tab) => {
             const id = getKeyFromUrl(tab.url);
             let mapKey = tab.key;
-            if (mapKey === 'share') return;
+            if (mapKey === 'share' || /projects?/i.test(mapKey || '')
+                || /\/projects?(?:[/?]|$)/i.test(tab.url || '')) return;
             const url = urlsMap[mapKey] || tab.url;
             if (url) finalTabs.push({ id: mapKey || id, label: tab.title, url, key: mapKey });
         });
@@ -169,15 +171,25 @@ const fetchTabs = async () => {
             finalTabs.unshift({ id: 'activities', label: '动态', url: urlsMap.activities });
         }
 
+        if (requestedTab && !finalTabs.some(tab => tab.id === requestedTab) && urlsMap[requestedTab]) {
+            finalTabs.push({ id: requestedTab, label: '个人内容', url: urlsMap[requestedTab] });
+        }
+
         tabs.value = finalTabs;
         ensure();
-        if (finalTabs.length > 0) activeTab.value = finalTabs[0].id;
+        if (finalTabs.length > 0) {
+            activeTab.value = finalTabs.some(tab => tab.id === requestedTab)
+                ? requestedTab : finalTabs[0].id;
+        }
 
     } catch (e) {
         console.error('Fetch tabs failed', e);
         tabs.value = [{ id: 'activities', label: '动态', url: urlsMap.activities }];
+        if (requestedTab && urlsMap[requestedTab] && requestedTab !== 'activities') {
+            tabs.value.push({ id: requestedTab, label: '个人内容', url: urlsMap[requestedTab] });
+        }
         ensure();
-        activeTab.value = 'activities';
+        activeTab.value = tabs.value.some(tab => tab.id === requestedTab) ? requestedTab : 'activities';
     }
 };
 
@@ -326,11 +338,11 @@ const handleItemClick = (f7router, item) => {
     const type = item.type;
     if (type === 'more_tab') {
         if (id.includes('收藏')) {
-            const token = userInfo.value?.urlToken || userId;
+            const collectionUserId = userInfo.value?.id || userId;
             if (id.includes('关注')) {
-                f7router.navigate(`/collections/${token}/following`);
+                f7router.navigate(`/collections/${collectionUserId}/following`);
             } else {
-                f7router.navigate(`/collections/${token}/mine`);
+                f7router.navigate(`/collections/${collectionUserId}/mine`);
             }
         } else {
             f7router.navigate(`/people-more/${userId}/${id}`);

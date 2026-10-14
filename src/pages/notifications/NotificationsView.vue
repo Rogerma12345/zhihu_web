@@ -40,7 +40,10 @@ const { tabs: tabData, loading: tabLoading, ensure, refresh, loadMore, ensureLoa
         });
     },
     map: (item) => mapNotification(item),
-    onError: () => f7.toast.create({ text: '加载失败' }).open(),
+    onError: (error) => {
+        const missingCookie = error?.message === '网页请求缺少 d_c0，无法生成签名';
+        f7.toast.create({ text: missingCookie ? '请先在设置中配置 d_c0' : '通知加载失败' }).open();
+    },
 });
 
 ensure();

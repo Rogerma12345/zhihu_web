@@ -13,7 +13,7 @@ import { useAlive } from '@/composables/useAlive.js';
 import { useAutoFill } from '@/composables/useAutoFill.js';
 
 export function emptyPage() {
-    return { list: [], hasMore: true, lastResult: null };
+    return { list: [], hasMore: true, lastResult: null, error: null };
 }
 
 /**
@@ -29,6 +29,7 @@ export function emptyPage() {
  * @param {() => boolean} [spec.isAlive] 存活守卫：返回 false 时丢弃本次结果，不写 page
  */
 export async function runPagedLoad(page, isRefresh, { fetch, mapList, onError, name, isAlive, signal }) {
+    page.error = null;
     try {
         // 续取沿用 page.lastResult 里的游标，但 signal 是一次性的，必须换成本次加载自己的
         const res = isRefresh || !page.lastResult
@@ -49,6 +50,7 @@ export async function runPagedLoad(page, isRefresh, { fetch, mapList, onError, n
         if (isAlive && !isAlive()) return;
         // 主动取消（切页/刷新作废）不是失败，不该弹提示
         if (e?.name === 'AbortError') return;
+        page.error = e?.message || '加载失败';
         if (onError) onError(e);
         else {
             // 页面没自带提示时也要说清为什么停住：静默失败看起来像"没有更多了"

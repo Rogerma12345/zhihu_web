@@ -39,8 +39,9 @@ zhihu/laes.js   请求体与签名加密
 **凭证只有一个变化入口**：请求头与正文由 `module.js` 的 `assemble()` 在每次尝试前现装
 （`x-Zse-96` 签名与 Cookie 都取自当时的令牌），所以任何换凭证的动作都必须回写实例
 `updateZhihuLoginData(tokenManager.getLoginData())`——登录框成功后、`auth.js` 刷新令牌后、游客凭证
-重新引导后都已回写；漏掉这一步等于请求继续带着旧令牌。刷新类响应不带 cookie 时 `updateLoginData`
-延用上一次的，带 cookie 时整组替换，换账号不留旧会话键。
+重新引导后都已回写；漏掉这一步等于请求继续带着旧令牌。刷新响应的 Cookie 由
+`auth.js` 合并持久化；新登录和游客会话不继承前一账号的 Cookie。手动网页凭证保存在当前
+`loginData.manualWebCookies` 中，仅在受信任知乎域名的网页请求上覆盖 `d_c0`、`z_c0`。
 
 401 统一走 `auth.js` 的 `rebuildCredential()`：登录态刷 refresh_token，游客态重新引导（游客令牌没有
 refresh_token，到期只能重取），并发请求共用同一次重建。`transport.js` 在重试前调 `options.assemble()`
@@ -52,6 +53,7 @@ refresh_token，到期只能重取），并发请求共用同一次重建。`tra
 `GM_xmlhttpRequest` 检测 → 注册 Framework7Vue → `await initZhihu()`（游客/登录凭证）→ 注入全局
 `$openLink`/`$handleCardClick`（同时挂 `window` 与 `globalProperties`，供 v-html 注入的
 `href="javascript:$openLink(...)"` 使用）→ `app.mount`。所有全局只在此注入一次，业务代码一律 import。
+粘贴链接由 `utils/url.js` 识别、`core/navigation.js` 导航；项目类链接不提供站内跳转。
 
 ## 页面状态恢复与 routeId
 

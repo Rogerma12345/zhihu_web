@@ -19,17 +19,22 @@ const userToken = computed(() => currentUser.value?.url_token || currentUser.val
 const activeTab = ref(props.tab || 'questions');
 
 const tabs = computed(() => {
-    const token = encodeURIComponent(userToken.value);
-    const id = encodeURIComponent(userId.value);
-    return [
-        { id: 'questions', label: '问题', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-questions` : null, web: true },
-        { id: 'collections', label: '收藏夹', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-favlists` : null, web: true },
-        { id: 'topics', label: '话题', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-topic-contributions` : null, web: true },
-        { id: 'columns', label: '专栏', url: token ? `https://www.zhihu.com/api/v4/members/${token}/following-columns` : null, web: true },
-        { id: 'users', label: '用户', url: token ? `https://www.zhihu.com/api/v4/members/${token}/followees` : null, web: true },
-        { id: 'specials', label: '专题', url: id ? `https://api.zhihu.com/people/${id}/following_news_specials` : null },
-        { id: 'roundtables', label: '圆桌', url: id ? `https://api.zhihu.com/people/${id}/following_roundtables` : null }
+    const uid = encodeURIComponent(userId.value);
+    const definitions = [
+        ['questions', '问题', 'following_questions'],
+        ['collections', '收藏夹', 'following_collections'],
+        ['topics', '话题', 'following_topics'],
+        ['columns', '专栏', 'following_columns'],
+        ['users', '用户', 'followees'],
+        ['specials', '专题', 'following_news_specials'],
+        ['roundtables', '圆桌', 'following_roundtables']
     ];
+
+    return definitions.map(([id, label, path]) => ({
+        id,
+        label,
+        url: uid ? `https://api.zhihu.com/people/${uid}/${path}` : null
+    }));
 });
 
 const tabFor = (tabId) => tabs.value.find(t => t.id === tabId);
@@ -42,10 +47,7 @@ const { tabs: tabData, loading: tabLoading, ensure, refresh, loadMore, ensureLoa
     fetch: (tabId, signal) => {
         const tab = tabFor(tabId);
         if (!tab?.url) return null;
-        const options = tab.web
-            ? { requestMode: 'web', requireWebSignature: true, signal }
-            : { signal };
-        return $http.get(`${tab.url}?limit=20`, options);
+        return $http.get(`${tab.url}?limit=20`, { signal });
     },
     map: (item, tabId) => mapItem(tabId, item),
 });
@@ -219,7 +221,8 @@ watch(userKey, () => {
 
                     <LoadMoreFooter :has-more="tabData[tab.id].hasMore" :length="tabData[tab.id].list.length" />
                     <EmptyState v-if="!tabLoading[tab.id] && tabData[tab.id].list.length === 0"
-                        icon="tray" text="暂无关注内容" />
+                        :icon="tabData[tab.id].error ? 'exclamationmark_triangle' : 'tray'"
+                        :text="tabData[tab.id].error || '暂无关注内容'" />
                 </f7-page-content>
             </f7-tab>
         </f7-tabs>

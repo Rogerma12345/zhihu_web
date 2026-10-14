@@ -30,7 +30,7 @@ const { useUser } = await import('@/composables/userManager.js');
 const { reportRead } = await import('@/services/read-report.js');
 const { fetchDislikeOptions, submitDislike } = await import('@/services/negative-feedback.js');
 const { HistoryService } = await import('@/services/history.js');
-const { loginWithPassword, sendSmsCode, submitCaptcha, getCaptchaImage, logout, rebuildCredential } = await import('@/services/auth.js');
+const { loginWithPassword, refreshAccessToken, sendSmsCode, submitCaptcha, getCaptchaImage, logout, rebuildCredential } = await import('@/services/auth.js');
 const { ensureGuestCredential } = await import('@/services/zhihu/guest.js');
 const $http = (await import('@/services/http.js')).default;
 
@@ -199,6 +199,258 @@ test('密码登录：签名与用户名进正文，换到的新令牌立刻用�
     assert.match(afterLogin.cookie, /d_c0=login-dc0/, '登录响应的 cookie 整组换用');
     assert.doesNotMatch(afterLogin.cookie, /test-dc0/, '旧账号的会话键不残留');
     seedLogin();
+});
+
+test('登录新账号响应无 Cookie 时不会继承上一个账号的 d_c0', async () => {
+    resetGM();
+    seedLogin();
+    reply('prod/sign_in', {
+        access_token: 'other-a', refresh_token: 'other-r', expires_in: 86400
+    });
+
+    try {
+        await loginWithPassword('13800000000', 'password');
+        updateZhihuLoginData(tokenManager.getLoginData());
+        assert.deepEqual(tokenManager.getLoginData().cookie, {});
+        assert.equal(getZhihuInstance().canSignWebRequests(), false);
+        await $http.get('https://api.zhihu.com/me');
+        assert.equal(lastCallTo('/me').cookie, null);
+    } finally {
+        seedLogin();
+    }
+});
+
+test('缺少网页 Cookie 时，关注与收藏夹 API 仍使用 Android 签名请求', async () => {
+    resetGM();
+    tokenManager.saveTokens('android-token', 'android-refresh', 86400, false, {
+        access_token: 'android-token', cookie: {}
+    });
+    updateZhihuLoginData(tokenManager.getLoginData());
+
+    try {
+        const followingPaths = [
+            'following_questions', 'following_collections', 'following_topics',
+            'following_columns', 'followees', 'following_news_specials', 'following_roundtables'
+        ];
+        const collectionPaths = ['collections_v2', 'following_collections'];
+
+        for (const path of followingPaths) {
+            await $http.get(`https://api.zhihu.com/people/me-id/${path}?limit=20`);
+        }
+        for (const path of collectionPaths) {
+            await $http.get(`https://api.zhihu.com/people/me-id/${path}?limit=20`, { isWWW: true });
+        }
+        await $http.get('https://api.zhihu.com/explore/collections?limit=20');
+
+        assert.equal(fakeGM.calls.length, 10);
+        for (const call of fakeGM.calls) {
+            assert.equal(call.method, 'GET');
+            assert.equal(call.headers.Authorization, 'Bearer android-token');
+            assert.ok(call.headers['x-Zse-96'], `${call.url} 应有 Android 签名`);
+            assert.equal(call.headers['x-zse-96'], undefined);
+            assert.equal(call.cookie, null);
+        }
+        assert.equal(fakeGM.calls[0].headers['x-app-version'] != null, true);
+        assert.equal(fakeGM.calls[7].headers['x-app-version'], undefined, 'isWWW 保留通用 Android 请求头');
+    } finally {
+        seedLogin();
+    }
+});
+
+test('个人收藏链接根据资料 ID 导航，避免直接将 URL token 当 Android ID', async () => {
+    resetGM();
+    seedLogin();
+    reply('/people/user-token', { id: 'internal-id' });
+    const { handleZhihuUrl } = await import('@/core/navigation.js');
+    const paths = [];
+    const result = await handleZhihuUrl({ navigate: (path) => paths.push(path) },
+        'https://www.zhihu.com/people/user-token/collections');
+    assert.equal(result.type, 'people-collections');
+    assert.deepEqual(paths, ['/collections/internal-id/mine']);
+    assert.equal(callsTo('/people/user-token').length, 1);
+});
+
+test('手动网页 Cookie 独立于 Android 凭证，覆盖签名并持久保存', async () => {
+    resetGM();
+    seedLogin();
+    try {
+        assert.equal(tokenManager.saveWebCookies({ d_c0: 'manual-dc0', z_c0: 'manual-zc0' }), true);
+        updateZhihuLoginData(tokenManager.getLoginData());
+        assert.deepEqual(tokenManager.getLoginData().cookie, { d_c0: 'test-dc0' });
+        assert.deepEqual(JSON.parse(JSON.parse(localStorage.getItem('zhihu_auth')).loginData).manualWebCookies,
+            { d_c0: 'manual-dc0', z_c0: 'manual-zc0' });
+
+        await $http.get('https://www.zhihu.com/api/v4/notifications/v2/recent?limit=20', {
+            requestMode: 'web', requireWebSignature: true
+        });
+        const webCall = lastCallTo('notifications/v2/recent');
+        assert.match(webCall.cookie, /d_c0=manual-dc0/);
+        assert.match(webCall.cookie, /z_c0=manual-zc0/);
+        assert.ok(webCall.headers['x-zse-96']);
+        assert.equal(webCall.headers.Authorization, undefined);
+
+        await $http.get('https://api.zhihu.com/me');
+        const appCall = lastCallTo('api.zhihu.com/me');
+        assert.match(appCall.cookie, /d_c0=test-dc0/);
+        assert.doesNotMatch(appCall.cookie, /manual-dc0/);
+        assert.ok(appCall.headers['x-Zse-96']);
+
+        await $http.get('https://example.com/health', { requestMode: 'web' });
+        assert.equal(lastCallTo('example.com/health').cookie, null);
+
+        assert.equal(tokenManager.saveWebCookies({}), true);
+        updateZhihuLoginData(tokenManager.getLoginData());
+        await $http.get('https://www.zhihu.com/api/v4/me', {
+            requestMode: 'web', requireWebSignature: true
+        });
+        assert.match(lastCallTo('www.zhihu.com/api/v4/me').cookie, /d_c0=test-dc0/);
+    } finally {
+        seedLogin();
+    }
+});
+
+test('手动 Cookie 在刷新令牌时保留，换账号或游客时不继承', async () => {
+    resetGM();
+    seedLogin();
+    try {
+        tokenManager.saveWebCookies({ d_c0: 'manual-dc0' });
+        updateZhihuLoginData(tokenManager.getLoginData());
+        reply('prod/sign_in', {
+            access_token: 'refreshed', refresh_token: 'refreshed-r', expires_in: 86400,
+            cookie: { z_c0: 'from-login' }
+        });
+        await refreshAccessToken();
+        assert.equal(tokenManager.getLoginData().manualWebCookies.d_c0, 'manual-dc0');
+        assert.equal(getZhihuInstance().canSignWebRequests(), true);
+
+        tokenManager.saveTokens('different', 'different-r', 86400, false, {
+            access_token: 'different', cookie: {}
+        });
+        updateZhihuLoginData(tokenManager.getLoginData());
+        assert.equal(tokenManager.getLoginData().manualWebCookies, undefined);
+        assert.equal(getZhihuInstance().canSignWebRequests(), false);
+        assert.equal(tokenManager.saveWebCookies({ d_c0: 'new-dc0' }), true);
+
+        tokenManager.clear();
+        assert.equal(tokenManager.getLoginData(), null);
+        assert.equal(localStorage.getItem('zhihu_auth'), null);
+        assert.equal(tokenManager.saveWebCookies({ d_c0: 'orphan' }), false);
+    } finally {
+        seedLogin();
+    }
+});
+
+test('刷新请求期间更新的手动 Cookie 不会被过期快照覆盖', async () => {
+    resetGM();
+    seedLogin();
+    fakeGM.routes.push({
+        test: (call) => call.url.includes('prod/sign_in'),
+        respond: () => {
+            tokenManager.saveWebCookies({ d_c0: 'just-saved' });
+            return { body: { access_token: 'after-refresh', refresh_token: 'next-r', expires_in: 86400 } };
+        }
+    });
+    try {
+        await refreshAccessToken();
+        assert.equal(tokenManager.getLoginData().manualWebCookies.d_c0, 'just-saved');
+    } finally {
+        seedLogin();
+    }
+});
+
+test('同账号刷新令牌：缺失 Cookie 时持久保留，部分更新时合并', async () => {
+    resetGM();
+    seedLogin();
+    reply('prod/sign_in', {
+        access_token: 'refreshed-a', refresh_token: 'refreshed-r', expires_in: 86400
+    });
+
+    try {
+        await refreshAccessToken();
+        assert.equal(tokenManager.getLoginData().cookie.d_c0, 'test-dc0');
+        const stored = JSON.parse(localStorage.getItem('zhihu_auth'));
+        assert.equal(JSON.parse(stored.loginData).cookie.d_c0, 'test-dc0');
+        await $http.get('https://api.zhihu.com/me');
+        assert.match(lastCallTo('/me').cookie, /d_c0=test-dc0/);
+
+        resetGM();
+        reply('prod/sign_in', {
+            access_token: 'refreshed-b', refresh_token: 'refreshed-r2', expires_in: 86400,
+            cookie: { z_c0: 'updated-zc0' }
+        });
+        await refreshAccessToken();
+        assert.deepEqual(tokenManager.getLoginData().cookie, {
+            d_c0: 'test-dc0', z_c0: 'updated-zc0'
+        });
+        await $http.get('https://api.zhihu.com/me');
+        assert.match(lastCallTo('/me').cookie, /z_c0=updated-zc0/);
+    } finally {
+        seedLogin();
+    }
+});
+
+test('同账号刷新令牌：服务端明确清除 Cookie 时不继承旧值', async () => {
+    resetGM();
+    seedLogin();
+    reply('prod/sign_in', {
+        access_token: 'refreshed-a', refresh_token: 'refreshed-r', expires_in: 86400,
+        cookie: null
+    });
+
+    try {
+        await refreshAccessToken();
+        assert.deepEqual(tokenManager.getLoginData().cookie, {});
+        assert.equal(getZhihuInstance().canSignWebRequests(), false);
+        await $http.get('https://api.zhihu.com/me');
+        assert.equal(lastCallTo('/me').cookie, null);
+    } finally {
+        seedLogin();
+    }
+});
+
+test('同账号刷新令牌：部分 Cookie 中显式清除 d_c0 应生效', async () => {
+    resetGM();
+    tokenManager.saveTokens('start-a', 'start-r', 86400, false, {
+        access_token: 'start-a', d_c0: 'old-top-level',
+        cookie: { d_c0: 'old-cookie', z_c0: 'keep-zc0' }
+    });
+    updateZhihuLoginData(tokenManager.getLoginData());
+    reply('prod/sign_in', {
+        access_token: 'next-a', refresh_token: 'next-r', expires_in: 86400,
+        cookie: { d_c0: '' }
+    });
+
+    try {
+        await refreshAccessToken();
+        assert.equal(tokenManager.getLoginData().d_c0, undefined);
+        assert.deepEqual(tokenManager.getLoginData().cookie, { d_c0: '', z_c0: 'keep-zc0' });
+        assert.equal(getZhihuInstance().canSignWebRequests(), false);
+    } finally {
+        seedLogin();
+    }
+});
+
+test('令牌刷新期间切换账号，不允许旧请求覆盖新账号凭证', async () => {
+    resetGM();
+    seedLogin();
+    fakeGM.routes.push({
+        test: (call) => call.url.includes('prod/sign_in'),
+        respond: () => {
+            tokenManager.saveTokens('other-access', 'other-refresh', 86400, false, {
+                access_token: 'other-access', cookie: { d_c0: 'other-dc0' }
+            });
+            updateZhihuLoginData(tokenManager.getLoginData());
+            return { body: { access_token: 'old-response', refresh_token: 'old-refresh', expires_in: 86400 } };
+        }
+    });
+
+    try {
+        await refreshAccessToken();
+        assert.equal(tokenManager.getAccessToken(), 'other-access');
+        assert.equal(tokenManager.getLoginData().cookie.d_c0, 'other-dc0');
+    } finally {
+        seedLogin();
+    }
 });
 
 test('发短信验证码与取/交图形验证码：票据走 cookie，提交正文不加密', async () => {

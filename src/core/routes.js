@@ -12,6 +12,7 @@ import SettingsView from '@/pages/settings/SettingsView.vue';
 import ThemePickerView from '@/pages/settings/ThemePickerView.vue';
 import PageLayoutView from '@/pages/settings/PageLayoutView.vue';
 import AboutView from '@/pages/settings/AboutView.vue';
+import WebCookieView from '@/pages/settings/WebCookieView.vue';
 import SearchPage from '@/pages/search/SearchPage.vue';
 import ArticleDetail from '@/pages/article/ArticleDetail.vue';
 import UserProfile from '@/pages/user/UserProfile.vue';
@@ -98,6 +99,10 @@ const routes = [
         component: PageLayoutView,
     },
     {
+        path: '/settings/web-cookie',
+        component: WebCookieView,
+    },
+    {
         path: '/settings/about',
         component: AboutView,
     },
@@ -110,7 +115,7 @@ const routes = [
         component: ArticleDetail,
     },
     {
-        path: '/user/:id',
+        path: '/user/:id/:tab?',
         component: UserProfile,
     },
     {

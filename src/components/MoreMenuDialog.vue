@@ -1,6 +1,6 @@
 <script setup>
 import { f7 } from 'framework7-vue';
-import { openLink } from '@/core/navigation.js';
+import { openLink, handleZhihuUrl } from '@/core/navigation.js';
 
 const props = defineProps({
     modelValue: Boolean,
@@ -20,6 +20,14 @@ const navigate = (path) => {
     close();
 };
 
+const openPastedLink = () => {
+    close();
+    f7.dialog.prompt('粘贴知乎内容链接', '打开知乎链接', async (value) => {
+        const result = await handleZhihuUrl(props.f7router || f7.views.main.router, value);
+        if (result.type === 'error') f7.toast.show({ text: result.message });
+    });
+};
+
 const openExternal = (url) => {
     openLink(url);
     close();
@@ -30,6 +38,12 @@ const openExternal = (url) => {
     <f7-actions :opened="modelValue" @actions:closed="close">
         <f7-actions-group>
             <f7-actions-label>功能菜单</f7-actions-label>
+            <f7-actions-button @click="openPastedLink">
+                <template #media>
+                    <f7-icon ios="f7:link" md="material:link" size="20" />
+                </template>
+                打开知乎链接
+            </f7-actions-button>
             <f7-actions-button @click="navigate('/notifications')">
                 <template #media>
                     <f7-icon ios="f7:bell" md="material:notifications" size="20" />

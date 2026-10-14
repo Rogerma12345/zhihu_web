@@ -89,6 +89,24 @@ test('请求抛错时保留已有数据并把错误交给 onError', async () => 
     assert.equal(page.hasMore, true, '失败不改分页状态');
 });
 
+test('首次请求失败保留错误状态，成功重试后清除', async () => {
+    const page = emptyPage();
+    await runPagedLoad(page, true, {
+        fetch: async () => { throw new Error('请求失败'); },
+        mapList: passthrough,
+        onError: () => {},
+    });
+    assert.equal(page.error, '请求失败');
+    assert.deepEqual(page.list, []);
+
+    await runPagedLoad(page, true, {
+        fetch: async () => ({ data: ['ok'], hasMore: false }),
+        mapList: passthrough,
+    });
+    assert.equal(page.error, null);
+    assert.deepEqual(page.list, ['ok']);
+});
+
 test('组件已卸载时丢弃在途结果', async () => {
     const page = emptyPage();
     await runPagedLoad(page, false, {

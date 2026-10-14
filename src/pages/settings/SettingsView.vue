@@ -494,6 +494,7 @@ onUpdated(() => {
             <f7-list-item title="数盟ID获取教程" subtitle="说明如何取到本机数盟ID" link="#"
                 @click="openMsidTutorial"></f7-list-item>
             <f7-list-item title="设置数盟ID" subtitle="用手动填写的数盟ID发请求" link="#" @click="setMsid"></f7-list-item>
+            <f7-list-item title="网页 Cookie" subtitle="配置 d_c0、z_c0" link="/settings/web-cookie/"></f7-list-item>
         </f7-list>
 
         <f7-block-title>关于</f7-block-title>

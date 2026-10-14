@@ -3,6 +3,7 @@ import { tokenManager, tryRefreshToken } from '@/services/auth.js';
 import { ensureGuestCredential } from '@/services/zhihu/guest.js';
 import { KEYS, getString, getJSON } from '@/services/storage.js';
 import { signWebRequest } from '@/services/zhihu/web-signature.js';
+import { normalizeWebCookies } from '@/services/web-cookie.js';
 
 const appVersion = "10.12.0"
 const apiVersion = "101_1_1.0"
@@ -55,12 +56,17 @@ class ZhihuRequest {
 
         const inheritedCookie = (!loginData || isGuestPayload)
             ? {}
-            : (source.cookie || this.cookieMap || {});
+            : (source.cookie || {});
         const cookieMap = { ...inheritedCookie };
         if (!cookieMap.d_c0 && source.d_c0) {
             cookieMap.d_c0 = source.d_c0;
         }
         this.cookieMap = cookieMap;
+        try {
+            this.manualWebCookies = isGuestPayload ? {} : normalizeWebCookies(source.manualWebCookies);
+        } catch {
+            this.manualWebCookies = {};
+        }
         this.cookie = Object.entries(cookieMap)
             .filter(([_, v]) => v)
             .map(([k, v]) => `${k}=${v}`)
@@ -130,8 +136,10 @@ class ZhihuRequest {
                 ? this.webDefaultHeaders
                 : (isWWW ? this.commonDefaultHeaders : this.defaultHeaders);
             const incomingCookie = headers.Cookie || headers.cookie;
-            const instanceCookie = baseDefaultHeaders.Cookie || "";
+            const isZhihuHost = /^https:\/\/[a-z0-9-]+\.zhihu\.com\//i.test(url);
+            const instanceCookie = isZhihuHost ? (baseDefaultHeaders.Cookie || "") : "";
             const cookieMap = {};
+            const isZhihuWebApi = /^https:\/\/(?:www|api)\.zhihu\.com\//i.test(url);
 
             for (const source of [instanceCookie, incomingCookie]) {
                 if (!source) continue;
@@ -139,6 +147,10 @@ class ZhihuRequest {
                     const [name, ...valueParts] = cookie.trim().split('=');
                     if (name) cookieMap[name] = valueParts.join('=');
                 });
+            }
+
+            if (isWebRequest && isZhihuWebApi) {
+                Object.assign(cookieMap, this.manualWebCookies);
             }
 
             const finalCookie = Object.entries(cookieMap)
@@ -227,7 +239,7 @@ class ZhihuRequest {
     delete(url, options) { return this.request('DELETE', url, null, options); }
 
     canSignWebRequests() {
-        return Boolean(this.cookieMap?.d_c0);
+        return Boolean(this.manualWebCookies?.d_c0 || this.cookieMap?.d_c0);
     }
 }
 

@@ -4,7 +4,7 @@ import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
 import TabLayout from '@/components/TabLayout.vue';
 import FeedCard from '@/components/FeedCard.vue';
 import $http from '@/services/http.js';
-import { parseZhihuUrl } from '@/utils/url.js';
+import { looksLikeZhihuUrl } from '@/utils/url.js';
 import { handleZhihuUrl, openLink } from '@/core/navigation.js';
 import { settings } from '@/core/settings.js';
 import { usePageState } from '@/composables/usePageState.js';
@@ -268,15 +268,13 @@ const handleSearch = async (text = query.value) => {
     submitting = true;
     hideSuggestions();
     try {
-        // 知乎 URL 继续按站内路由处理，普通外链仍在新标签页打开。
-        const urlResult = await parseZhihuUrl(term);
-        if (urlResult.type !== 'error' && urlResult.type !== 'browser') {
+        const urlResult = await handleZhihuUrl(props.f7router, term);
+        if (urlResult.type !== 'error') {
             query.value = '';
-            await handleZhihuUrl(props.f7router, term);
             return;
         }
-        if (urlResult.type === 'browser' && urlResult.id) {
-            openLink(urlResult.id);
+        if (looksLikeZhihuUrl(term)) {
+            f7.toast.show({ text: urlResult.message });
             return;
         }
 

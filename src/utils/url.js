@@ -1,140 +1,126 @@
 // src/utils/url.js
-// 知乎链接解析：把各类知乎 URL 归一化为 { type, id }，跳转由 core/navigation 处理。
+// 知乎链接解析：将内容链接归一为站内卡片类型。
 import $http from '@/services/http.js';
 
 async function fetchVideoUrl(videoId) {
     try {
         const res = await $http.get(`https://lens.zhihu.com/api/v4/videos/${videoId}`);
-        let videoLink = res.playlist?.SD?.play_url
+        const videoLink = res.playlist?.SD?.play_url
             || res.playlist?.LD?.play_url
             || res.playlist?.HD?.play_url;
-
-        if (videoLink) {
-            return { type: 'browser', id: videoLink };
-        } else {
-            return { type: 'error', message: '无法获取视频链接' };
-        }
+        return videoLink
+            ? { type: 'browser', id: videoLink }
+            : { type: 'error', message: '无法获取视频链接' };
     } catch {
         return { type: 'error', message: '网络请求失败' };
     }
 }
 
-export async function parseZhihuUrl(url) {
+/** 判断输入中是否包含知乎网页或 App 链接。 */
+export function looksLikeZhihuUrl(text) {
+    return /(?:https?:\/\/)?(?:www\.|zhuanlan\.)?zhihu\.com(?:\/|\?|$)|zhihu:\/\//i.test(String(text || ''));
+}
+
+function extractUrl(text) {
+    const trimmed = String(text || '').trim();
+    const match = trimmed.match(/(?:https?:\/\/|zhihu:\/\/)[^\s<>"“”]+/i);
+    const url = match ? match[0].replace(/[.,。，！!；;）)]+$/, '') : trimmed;
+    return /^(?:www\.|zhuanlan\.)?zhihu\.com(?:\/|\?|$)/i.test(url)
+        ? `https://${url}` : url;
+}
+
+const PROFILE_TABS = {
+    answers: 'answer',
+    asks: 'question',
+    questions: 'question',
+    posts: 'article',
+    articles: 'article',
+    zvideos: 'zvideo',
+    pins: 'pin',
+    columns: 'column',
+    activities: 'activities',
+};
+
+const DEEP_LINK_TYPES = {
+    answers: 'answer',
+    questions: 'question',
+    articles: 'article',
+    pins: 'pin',
+    topics: 'topic',
+    columns: 'column',
+    collections: 'collection',
+    zvideos: 'zvideo',
+    people: 'people',
+};
+
+/** 解析粘贴或分享的知乎 URL；未知知乎路径返回错误，不猜测内容类型。 */
+export async function parseZhihuUrl(input) {
+    const url = extractUrl(input);
     try {
         const u = new URL(url);
-        const { protocol, hostname, pathname, search, searchParams } = u;
-
-        if (
-            protocol !== 'zhihu:' &&
-            !/^(?:http|https):$/.test(protocol)
-        ) {
-            return { type: 'browser', id: url };
-        }
-
-        if (/^(http|https):$/.test(protocol) && !/^(www\.)?zhihu\.com$/.test(hostname) && !/^(zhuanlan\.)?zhihu\.com$/.test(hostname)) {
-            return { type: 'browser', id: url };
-        }
-
-        // zhihu:// 深链：非特殊协议下首段落在 hostname（pathname 里没有它），
-        // 归一为 https 后与网页链接走同一套匹配；段尾的 s 是接口复数形式（answers → answer）
+        const { protocol, hostname, search, searchParams } = u;
         if (protocol === 'zhihu:') {
-            const head = hostname.endsWith('s') ? hostname.slice(0, -1) : hostname;
-            const rest = `${pathname}${search}`;
-            return await parseZhihuUrl(head ? `https://www.zhihu.com/${head}${rest}` : `https://www.zhihu.com${rest}`);
+            const kind = DEEP_LINK_TYPES[hostname] || hostname;
+            return parseZhihuUrl(`https://www.zhihu.com/${kind}${u.pathname}${search}`);
+        }
+        if (!['http:', 'https:'].includes(protocol)) {
+            return { type: 'error', message: '不支持的链接协议' };
+        }
+        if (!['zhihu.com', 'www.zhihu.com', 'zhuanlan.zhihu.com'].includes(hostname)) {
+            return { type: 'browser', id: url };
         }
 
+        const path = u.pathname.replace(/\/+$/, '') || '/';
         let match;
 
-        // Question + Answer → answer（深链归一后可能出现 answers 复数形式）
-        if ((match = pathname.match(/^\/question\/(\d+)\/answers?\/(\d+)$/))) {
-            return { type: 'answer', id: match[2] };
+        if (path.startsWith('/oia/')) {
+            return parseZhihuUrl(`${u.origin}${path.slice(4)}${search}`);
         }
-
-        // Standalone Answer → answer
-        if ((match = pathname.match(/^\/answer\/(\d+)$/))) {
+        if ((match = path.match(/^\/tardis\/[^/]+\/(ans|art|qus)\/(\d+)$/))) {
+            const type = { ans: 'answer', art: 'article', qus: 'question' }[match[1]];
+            return { type, id: match[2] };
+        }
+        if ((match = path.match(/^\/(?:aria\/)?question\/\d+\/answers?\/(\d+)$/))) {
             return { type: 'answer', id: match[1] };
         }
-
-        // Question → question
-        if ((match = pathname.match(/^\/question\/(\d+)$/))) {
-            return { type: 'question', id: match[1] };
-        }
-
-        // Article (专栏文章) → article
-        if (
-            (match = pathname.match(/^\/p\/(\d+)$/)) ||
-            (match = pathname.match(/^\/appview\/p\/(\d+)$/)) ||
-            (match = pathname.match(/^\/article\/(\d+)$/))
-        ) {
+        if ((match = path.match(/^\/answer\/(\d+)$/))) return { type: 'answer', id: match[1] };
+        if ((match = path.match(/^\/question\/(\d+)$/))) return { type: 'question', id: match[1] };
+        if ((match = path.match(/^\/(?:p|appview\/p|article)\/(\d+)$/))) {
             return { type: 'article', id: match[1] };
         }
+        if ((match = path.match(/^\/pin\/(\d+)$/))) return { type: 'pin', id: match[1] };
+        if ((match = path.match(/^\/video\/(\d+)$/))) return fetchVideoUrl(match[1]);
+        if ((match = path.match(/^\/zvideo\/(\d+)$/))) return { type: 'zvideo', id: match[1] };
+        if ((match = path.match(/^\/collection\/(\d+)$/))) return { type: 'collection', id: match[1] };
 
-        // Pin (想法) → pin
-        if ((match = pathname.match(/^\/pin\/(\d+)$/))) {
-            return { type: 'pin', id: match[1] };
+        if ((match = path.match(/^\/(?:people|org)\/([^/]+)(?:\/([^/]+))?$/))) {
+            const userId = decodeURIComponent(match[1]);
+            const section = match[2];
+            if (!section) return { type: 'people', id: userId };
+            if (section === 'collections' || section === 'following-collections') {
+                return { type: 'people-collections', id: userId, tab: section === 'collections' ? 'mine' : 'following' };
+            }
+            if (PROFILE_TABS[section]) return { type: 'people-tab', id: userId, tab: PROFILE_TABS[section] };
         }
-
-        // Old Video → 异步解析
-        if ((match = pathname.match(/^\/video\/(\d+)$/))) {
-            return await fetchVideoUrl(match[1]);
+        if ((match = path.match(/^\/topics?\/(\d+)$/))) return { type: 'topic', id: match[1] };
+        if ((match = path.match(/^\/column\/([^/]+)$/))) {
+            return { type: 'column', id: decodeURIComponent(match[1]) };
         }
-
-        // ZVideo → zvideo（与 core/navigation resolveCardRoute 的类型约定一致）
-        if ((match = pathname.match(/^\/zvideo\/(\d+)$/))) {
-            return { type: 'zvideo', id: match[1] };
+        if (hostname === 'zhuanlan.zhihu.com' && (match = path.match(/^\/([^/]+)$/))) {
+            return { type: 'column', id: decodeURIComponent(match[1]) };
         }
-
-        // People / Org → people
-        if (
-            (match = pathname.match(/^\/people\/([^\/]+)$/)) ||
-            (match = pathname.match(/^\/org\/([^\/]+)$/))
-        ) {
-            return { type: 'people', id: match[1] };
-        }
-
-        // Topic → topic
-        if (
-            (match = pathname.match(/^\/topics\/(\d+)$/)) ||
-            (match = pathname.match(/^\/topic\/(\d+)$/))
-        ) {
-            return { type: 'topic', id: match[1] };
-        }
-
-        // Column → column（专栏标识是 c_ 开头的长号，也可能是自定义字母串）
-        if ((match = pathname.match(/^\/column\/([^\/]+)$/))) {
-            return { type: 'column', id: match[1] };
-        }
-
-        // Roundtable → roundtable
-        if ((match = pathname.match(/^\/roundtable\/(\d+)$/))) {
-            return { type: 'roundtable', id: match[1] };
-        }
-
-        // Special → special
-        if ((match = pathname.match(/^\/special\/(\d+)$/))) {
-            return { type: 'special', id: match[1] };
-        }
-
-        // Theater (直播短剧)：带 drama_id 归一为 drama 类型
-        if (pathname === '/theater') {
-            const dramaId = searchParams.get('drama_id');
-            if (dramaId) return { type: 'drama', id: dramaId };
+        if (path === '/column' || (hostname === 'zhuanlan.zhihu.com' && path === '/')) {
             return { type: 'browser', id: url };
         }
-
-        // /oia/ 是站外分享中转路径，剥掉这一段后按原链接重试（保留原 host）
-        if (pathname.startsWith('/oia/')) {
-            return await parseZhihuUrl(`${protocol}//${hostname}${pathname.replace('/oia/', '/')}${search}`);
+        if ((match = path.match(/^\/roundtable\/([^/]+)$/))) return { type: 'roundtable', id: match[1] };
+        if ((match = path.match(/^\/special\/([^/]+)$/))) return { type: 'special', id: match[1] };
+        if (path === '/theater') {
+            const dramaId = searchParams.get('drama_id');
+            return dramaId ? { type: 'drama', id: dramaId } : { type: 'browser', id: url };
         }
-
-        // 登录回跳链接：交回站内登录流程
-        if (pathname.startsWith('/signin')) {
-            return { type: 'login', id: searchParams.get('next') || '' };
-        }
-
-        // 未匹配
-        return { type: 'error', message: '暂不支持的链接: ' + url };
+        if (path.startsWith('/signin')) return { type: 'login', id: searchParams.get('next') || '' };
+        return { type: 'error', message: '暂不支持的知乎链接' };
     } catch {
-        return { type: 'error', message: '无效链接: ' + url };
+        return { type: 'error', message: '无效链接' };
     }
 }

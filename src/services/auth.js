@@ -1,6 +1,7 @@
 import CryptoJS from 'crypto-js';
 import $http from '@/services/http.js';
-import { KEYS, getJSON, setJSON, removeKeys } from '@/services/storage.js';
+import { KEYS, getJSON, setJSON, trySetJSON, removeKeys } from '@/services/storage.js';
+import { normalizeWebCookies } from '@/services/web-cookie.js';
 
 const CLIENT_ID = '8d5227e0aaaa4797a763ac64e0c3b8';
 const CLIENT_SECRET = 'ecbefbf6b17e47ecb9035107866380';
@@ -51,6 +52,26 @@ function saveTokens(newAccessToken, newRefreshToken, expiresIn, guest = false, l
     });
 }
 
+/** 将手动网页 Cookie 保存到当前登录会话，独立于自动获取的 Cookie。 */
+function saveWebCookies(values) {
+    if (!isLogin() || !loginData) return false;
+    const cookies = normalizeWebCookies(values);
+    const updated = { ...loginData };
+    if (Object.keys(cookies).length) updated.manualWebCookies = cookies;
+    else delete updated.manualWebCookies;
+
+    const saved = trySetJSON(KEYS.auth, {
+        accessToken,
+        refreshToken,
+        expiresAt,
+        updateTime,
+        isGuest,
+        loginData: JSON.stringify(updated),
+    });
+    if (saved) loginData = updated;
+    return saved;
+}
+
 // 清除所有 token
 function clearTokens() {
     accessToken = null;
@@ -90,6 +111,7 @@ const tokenManager = {
     isExpired: () => isExpired(),
     shouldRefresh: () => shouldRefresh(),
     saveTokens,
+    saveWebCookies,
     clear: clearTokens,
 };
 
@@ -177,7 +199,7 @@ export async function loginWithPassword(phone, password, captchaTicket = '') {
             data.refresh_token,
             data.expires_in,
             false,
-            data
+            { ...data, cookie: data.cookie || {} }
         );
     }
 
@@ -215,7 +237,7 @@ export async function loginWithCode(phone, code, captchaTicket = '') {
             data.refresh_token,
             data.expires_in,
             false,
-            data
+            { ...data, cookie: data.cookie || {} }
         );
     }
 
@@ -250,18 +272,35 @@ export async function refreshAccessToken() {
             noCredentialRebuild: true,
         });
 
-    if (data.access_token) {
+    if (data.access_token && tokenManager.getRefreshToken() === currentRefreshToken) {
+        const previousLoginData = tokenManager.getLoginData() || {};
+        const nextLoginData = { ...previousLoginData, ...data };
+        if (previousLoginData.manualWebCookies) {
+            nextLoginData.manualWebCookies = previousLoginData.manualWebCookies;
+        } else {
+            delete nextLoginData.manualWebCookies;
+        }
+        if (data.cookie === null || data.cookie === '') {
+            nextLoginData.cookie = {};
+            delete nextLoginData.d_c0;
+        } else if (data.cookie && typeof data.cookie === 'object' && !Array.isArray(data.cookie)) {
+            nextLoginData.cookie = { ...(previousLoginData.cookie || {}), ...data.cookie };
+            if (data.cookie.d_c0 !== undefined) delete nextLoginData.d_c0;
+        }
+        if (data.d_c0 !== undefined && nextLoginData.cookie) {
+            nextLoginData.cookie = { ...nextLoginData.cookie, d_c0: data.d_c0 };
+        }
+
         tokenManager.saveTokens(
             data.access_token,
             data.refresh_token,
             data.expires_in,
-            isGuest,
-            data
+            tokenManager.isGuest,
+            nextLoginData
         );
-        // 请求实例持有的是装配时的一次性头快照，令牌换了必须回写，否则后续请求仍带旧令牌。
-        // 此处动态 import：module.js 静态依赖本文件，直接 import 会成环。
+        // 请求实例持有装配时的凭证快照，令牌更新后需同步。
         const { updateZhihuLoginData } = await import('@/services/zhihu/module.js');
-        updateZhihuLoginData(tokenManager.getLoginData());
+        updateZhihuLoginData(nextLoginData);
     }
 
     return data;
